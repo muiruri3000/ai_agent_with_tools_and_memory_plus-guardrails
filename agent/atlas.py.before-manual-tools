@@ -1,11 +1,5 @@
-from agent.tools import (
-    get_customers,
-    find_customer,
-    get_customer_by_id,
-    update_customer,
-    delete_customer,
-)
-from agent.executor import ToolExecutor
+from unittest import result
+
 from google import genai
 from google.genai import types
 import re
@@ -17,7 +11,7 @@ from config.settings import (
 
 from config.personas import ATLAS
 
-from agent.registry import GEMINI_TOOLS
+from agent.registry import TOOLS
 
 from agent.router import (
     route_request,
@@ -25,6 +19,13 @@ from agent.router import (
     extract_customer_update,
 )
 
+from agent.tools import (
+    get_customers,
+    find_customer,
+    get_customer_by_id,
+    update_customer,
+    delete_customer,
+)
 
 
 class Atlas:
@@ -37,16 +38,11 @@ class Atlas:
         }
         self.client = genai.Client(api_key=GEMINI_API_KEY)
 
-        self.executor = ToolExecutor()
-
         self.chat = self.client.chats.create(
             model=MODEL_NAME,
             config=types.GenerateContentConfig(
-                system_instruction=self.persona.build_system_instruction(),
-                tools=[GEMINI_TOOLS],
-                automatic_function_calling=types.AutomaticFunctionCallingConfig(
-                    disable=True
-                ),
+                system_instruction=(self.persona.build_system_instruction()),
+                tools=TOOLS,
             ),
         )
 
@@ -625,33 +621,9 @@ class Atlas:
         """
         Handle requests that are not intercepted
         by deterministic application logic.
-
-        Gemini may request one or more tools. Atlas executes
-        those tools through ToolExecutor and sends the results
-        back to Gemini for the final response.
         """
 
         response = self.chat.send_message(message)
-
-        while response.function_calls:
-            function_responses = []
-
-            for function_call in response.function_calls:
-                result = self.executor.execute(
-                    function_call.name,
-                    dict(function_call.args),
-                )
-
-                serialized_result = self.executor.serialize_result(result)
-
-                function_responses.append(
-                    types.Part.from_function_response(
-                        name=function_call.name,
-                        response=serialized_result,
-                    )
-                )
-
-            response = self.chat.send_message(function_responses)
 
         return response.text
 

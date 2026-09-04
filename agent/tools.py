@@ -1,3 +1,5 @@
+from agent.results import ToolResult
+
 from database.db import (
     get_customers as db_get_customers,
     get_customer_by_id as db_get_customer_by_id,
@@ -15,7 +17,7 @@ from memory.memory import (
 )
 
 
-def get_customers() -> list:
+def get_customers() -> ToolResult:
     """
     Return the complete list of all customers.
 
@@ -36,14 +38,19 @@ def get_customers() -> list:
 
     print(f"🔧 DATABASE RESULT: {len(results)} customers")
 
-    return results
+    return ToolResult(
+        success=True,
+        action="get_customers",
+        message=f"Retrieved {len(results)} customer(s).",
+        data=results,
+    )
 
 
 def find_customer(
     name: str = None,
     email: str = None,
     city: str = None,
-) -> list:
+) -> ToolResult:
     """
     Search for specific customers.
 
@@ -78,10 +85,15 @@ def find_customer(
 
     print(f"🔎 MATCHES FOUND: {len(results)}")
 
-    return results
+    return ToolResult(
+        success=True,
+        action="find_customer",
+        message=f"Found {len(results)} matching customer(s).",
+        data=results,
+    )
 
 
-def web_search(query: str) -> list:
+def web_search(query: str) -> ToolResult:
     """
     Search the Internet for current or external information.
 
@@ -99,12 +111,19 @@ def web_search(query: str) -> list:
 
     print(f"🌐 RESULTS: {len(results)}")
 
-    return results
+    return ToolResult(
+        success=True,
+        action="web_search",
+        message=f"Retrieved {len(results)} web search result(s).",
+        data=results,
+    )
 
 
-def remember(fact: str) -> dict:
+def remember(fact: str) -> ToolResult:
     """
     Store an important fact in persistent memory.
+
+    This is a write operation and requires explicit user confirmation.
     """
 
     print("\n🧠 TOOL CALLED: remember()")
@@ -118,12 +137,12 @@ def remember(fact: str) -> dict:
 
         print("🧠 MEMORY NOT SAVED")
 
-        return {
-            "success": False,
-            "action": "remember",
-            "message": ("User declined the memory request."),
-            "fact": fact,
-        }
+        return ToolResult(
+            success=False,
+            action="remember",
+            message="User declined the memory request.",
+            data={"fact": fact},
+        )
 
     print(f"🧠 MEMORY: {fact}")
 
@@ -131,17 +150,19 @@ def remember(fact: str) -> dict:
 
     print("🧠 MEMORY SAVED")
 
-    return {
-        "success": True,
-        "action": "remember",
-        "message": result,
-        "fact": fact,
-    }
+    return ToolResult(
+        success=True,
+        action="remember",
+        message=result,
+        data={"fact": fact},
+    )
 
 
-def recall() -> list:
+def recall() -> ToolResult:
     """
     Retrieve persistent memories.
+
+    This is a read-only operation.
     """
 
     print("\n🧠 TOOL CALLED: recall()")
@@ -150,12 +171,19 @@ def recall() -> list:
 
     print(f"🧠 MEMORIES FOUND: {len(memories)}")
 
-    return memories
+    return ToolResult(
+        success=True,
+        action="recall",
+        message=f"Retrieved {len(memories)} memor{'y' if len(memories) == 1 else 'ies'}.",
+        data=memories,
+    )
 
 
-def forget(fact: str) -> dict:
+def forget(fact: str) -> ToolResult:
     """
     Remove a specific fact from persistent memory.
+
+    This is a destructive operation and requires explicit user confirmation.
     """
 
     print("\n🧠 TOOL CALLED: forget()")
@@ -169,12 +197,12 @@ def forget(fact: str) -> dict:
 
         print("🧠 MEMORY NOT DELETED")
 
-        return {
-            "success": False,
-            "action": "forget",
-            "message": ("User declined the memory deletion."),
-            "fact": fact,
-        }
+        return ToolResult(
+            success=False,
+            action="forget",
+            message="User declined the memory deletion.",
+            data={"fact": fact},
+        )
 
     print(f"🧠 MEMORY TO REMOVE: {fact}")
 
@@ -182,19 +210,19 @@ def forget(fact: str) -> dict:
 
     print("🧠 MEMORY DELETED")
 
-    return {
-        "success": True,
-        "action": "forget",
-        "message": result,
-        "fact": fact,
-    }
+    return ToolResult(
+        success=True,
+        action="forget",
+        message=result,
+        data={"fact": fact},
+    )
 
 
 def create_customer(
     name: str,
     email: str,
     city: str,
-) -> dict:
+) -> ToolResult:
     """
     Create a new customer in the database.
 
@@ -217,12 +245,12 @@ def create_customer(
 
         print("📝 CUSTOMER NOT CREATED")
 
-        return {
-            "success": False,
-            "action": "create_customer",
-            "message": "User declined customer creation.",
-            "data": None,
-        }
+        return ToolResult(
+            success=False,
+            action="create_customer",
+            message="User declined customer creation.",
+            data=None,
+        )
 
     # ---------------------------------------------
     # DATABASE CREATE
@@ -248,21 +276,21 @@ def create_customer(
 
                 print("⚠️ CUSTOMER NOT CREATED: " f"{result['message']}")
 
-                return {
-                    "success": False,
-                    "action": "create_customer",
-                    "message": result["message"],
-                    "data": existing,
-                }
+                return ToolResult(
+                    success=False,
+                    action="create_customer",
+                    message=result["message"],
+                    data=existing,
+                )
 
             print("❌ CUSTOMER CREATION FAILED: " f"{result['message']}")
 
-            return {
-                "success": False,
-                "action": "create_customer",
-                "message": result["message"],
-                "data": None,
-            }
+            return ToolResult(
+                success=False,
+                action="create_customer",
+                message=result["message"],
+                data=None,
+            )
 
         # -----------------------------------------
         # SUCCESS
@@ -272,23 +300,23 @@ def create_customer(
 
         print("📝 CUSTOMER CREATED: " f"{customer['id']}")
 
-        return {
-            "success": True,
-            "action": "create_customer",
-            "message": result["message"],
-            "data": customer,
-        }
+        return ToolResult(
+            success=True,
+            action="create_customer",
+            message=result["message"],
+            data=customer,
+        )
 
     except Exception as e:
 
         print("❌ CUSTOMER CREATION FAILED: " f"{e}")
 
-        return {
-            "success": False,
-            "action": "create_customer",
-            "message": "Customer creation failed.",
-            "data": None,
-        }
+        return ToolResult(
+            success=False,
+            action="create_customer",
+            message="Customer creation failed.",
+            data=None,
+        )
 
 
 def update_customer(
@@ -446,37 +474,37 @@ def update_customer(
 
             print(f"❌ CUSTOMER UPDATE FAILED: " f"{result['message']}")
 
-            return {
-                "success": False,
-                "action": "update_customer",
-                "message": result["message"],
-                "data": None,
-            }
+            return ToolResult(
+                success=False,
+                action="update_customer",
+                message=result["message"],
+                data=None,
+            )
 
         customer = result["data"]
 
         print(f"📝 CUSTOMER UPDATED: " f"{customer['id']}")
 
-        return {
-            "success": True,
-            "action": "update_customer",
-            "message": ("Customer updated successfully."),
-            "data": customer,
-        }
+        return ToolResult(
+            success=True,
+            action="update_customer",
+            message="Customer updated successfully.",
+            data=customer,
+        )
 
     except Exception as e:
 
         print(f"❌ CUSTOMER UPDATE FAILED: {e}")
 
-        return {
-            "success": False,
-            "action": "update_customer",
-            "message": ("Customer update failed."),
-            "data": None,
-        }
+        return ToolResult(
+            success=False,
+            action="update_customer",
+            message="Customer update failed.",
+            data=None,
+        )
 
 
-def get_customer_by_id(customer_id: int) -> dict | None:
+def get_customer_by_id(customer_id: int) -> ToolResult:
     """
     Retrieve a single customer by ID.
 
@@ -490,14 +518,25 @@ def get_customer_by_id(customer_id: int) -> dict | None:
 
     if not customer:
         print(f"🔎 CUSTOMER NOT FOUND: {customer_id}")
-        return None
+
+        return ToolResult(
+            success=False,
+            action="get_customer_by_id",
+            message=f"Customer ID {customer_id} not found.",
+            data=None,
+        )
 
     print(f"🔎 CUSTOMER FOUND: {customer['name']}")
 
-    return customer
+    return ToolResult(
+        success=True,
+        action="get_customer_by_id",
+        message="Customer retrieved successfully.",
+        data=customer,
+    )
 
 
-def delete_customer(customer_id: int) -> dict:
+def delete_customer(customer_id: int) -> ToolResult:
     """
     Delete an existing customer.
 
@@ -507,18 +546,6 @@ def delete_customer(customer_id: int) -> dict:
 
     print("\n🗑️ TOOL CALLED: delete_customer()")
 
-    # ---------------------------------------------
-    # FIND CUSTOMER
-    # ---------------------------------------------
-
-    customers = db_find_customer()
-
-    # We cannot use the generic find_customer() here
-    # because it requires a search parameter.
-    #
-    # Instead, retrieve the customer directly through
-    # the database layer.
-
     from database.db import get_customer_by_id
 
     customer = get_customer_by_id(customer_id)
@@ -527,12 +554,12 @@ def delete_customer(customer_id: int) -> dict:
 
         print(f"❌ CUSTOMER NOT FOUND: {customer_id}")
 
-        return {
-            "success": False,
-            "action": "delete_customer",
-            "message": "Customer not found.",
-            "data": None,
-        }
+        return ToolResult(
+            success=False,
+            action="delete_customer",
+            message="Customer not found.",
+            data=None,
+        )
 
     # ---------------------------------------------
     # CONFIRMATION
@@ -552,12 +579,12 @@ def delete_customer(customer_id: int) -> dict:
 
         print("🗑️ CUSTOMER NOT DELETED")
 
-        return {
-            "success": False,
-            "action": "delete_customer",
-            "message": "User declined customer deletion.",
-            "data": None,
-        }
+        return ToolResult(
+            success=False,
+            action="delete_customer",
+            message="User declined customer deletion.",
+            data=None,
+        )
 
     # ---------------------------------------------
     # DELETE
@@ -571,18 +598,18 @@ def delete_customer(customer_id: int) -> dict:
 
         print(f"❌ CUSTOMER DELETE FAILED: " f"{result['message']}")
 
-        return {
-            "success": False,
-            "action": "delete_customer",
-            "message": result["message"],
-            "data": None,
-        }
+        return ToolResult(
+            success=False,
+            action="delete_customer",
+            message=result["message"],
+            data=None,
+        )
 
     print(f"🗑️ CUSTOMER DELETED: " f"{customer['id']}")
 
-    return {
-        "success": True,
-        "action": "delete_customer",
-        "message": "Customer deleted successfully.",
-        "data": customer,
-    }
+    return ToolResult(
+        success=True,
+        action="delete_customer",
+        message="Customer deleted successfully.",
+        data=customer,
+    )

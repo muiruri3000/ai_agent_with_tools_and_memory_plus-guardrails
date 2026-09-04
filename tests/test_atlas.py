@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import patch
 
 from agent.atlas import Atlas
+from agent.results import ToolResult
 
 
 class TestAtlasCustomerLookup(unittest.TestCase):
@@ -21,7 +22,12 @@ class TestAtlasCustomerLookup(unittest.TestCase):
             "city": "Thika",
         }
 
-        mock_find_customer.return_value = [customer]
+        mock_find_customer.return_value = ToolResult(
+            success=True,
+            action="find_customer",
+            message="Found 1 matching customer(s).",
+            data=[customer],
+        )
 
         atlas = Atlas()
 
@@ -87,14 +93,19 @@ class TestAtlasCustomerDelete(unittest.TestCase):
             "city": "Thika",
         }
 
-        mock_find_customer.return_value = [customer]
+        mock_find_customer.return_value = ToolResult(
+            success=True,
+            action="find_customer",
+            message="Found 1 matching customer(s).",
+            data=[customer],
+        )
 
-        mock_delete_customer.return_value = {
-            "success": True,
-            "action": "delete_customer",
-            "message": "Customer deleted successfully.",
-            "data": customer,
-        }
+        mock_delete_customer.return_value = ToolResult(
+            success=True,
+            action="delete_customer",
+            message="Customer deleted successfully.",
+            data=customer,
+        )
 
         atlas = Atlas()
 
@@ -144,14 +155,19 @@ class TestAtlasCustomerUpdate(unittest.TestCase):
             "city": "Embu",
         }
 
-        mock_find_customer.return_value = [customer]
+        mock_find_customer.return_value = ToolResult(
+            success=True,
+            action="find_customer",
+            message="Found 1 matching customer(s).",
+            data=[customer],
+        )
 
-        mock_update_customer.return_value = {
-            "success": True,
-            "action": "update_customer",
-            "message": "Customer updated successfully.",
-            "data": updated_customer,
-        }
+        mock_update_customer.return_value = ToolResult(
+            success=True,
+            action="update_customer",
+            message="Customer updated successfully.",
+            data=updated_customer,
+        )
 
         atlas = Atlas()
 
@@ -196,14 +212,19 @@ class TestAtlasUpdateSafety(unittest.TestCase):
             "city": "Nairobi",
         }
 
-        mock_find_customer.return_value = [customer]
+        mock_find_customer.return_value = ToolResult(
+            success=True,
+            action="find_customer",
+            message="Found 1 matching customer(s).",
+            data=[customer],
+        )
 
-        mock_update_customer.return_value = {
-            "success": True,
-            "action": "update_customer",
-            "message": "Customer updated successfully.",
-            "data": updated_customer,
-        }
+        mock_update_customer.return_value = ToolResult(
+            success=True,
+            action="update_customer",
+            message="Customer updated successfully.",
+            data=updated_customer,
+        )
 
         atlas = Atlas()
 
@@ -252,14 +273,19 @@ class TestAtlasUpdateSafety(unittest.TestCase):
             "city": "Embu",
         }
 
-        mock_get_customer_by_id.return_value = customer
+        mock_get_customer_by_id.return_value = ToolResult(
+            success=True,
+            action="get_customer_by_id",
+            message="Customer retrieved successfully.",
+            data=customer,
+        )
 
-        mock_update_customer.return_value = {
-            "success": True,
-            "action": "update_customer",
-            "message": "Customer updated successfully.",
-            "data": updated_customer,
-        }
+        mock_update_customer.return_value = ToolResult(
+            success=True,
+            action="update_customer",
+            message="Customer updated successfully.",
+            data=updated_customer,
+        )
 
         atlas = Atlas()
 
@@ -319,10 +345,15 @@ class TestAtlasUpdateSafety(unittest.TestCase):
 
         atlas.context["customer"] = david
 
-        mock_find_customer.return_value = [
-            john_one,
-            john_two,
-        ]
+        mock_find_customer.return_value = ToolResult(
+            success=True,
+            action="find_customer",
+            message="Found 2 matching customer(s).",
+            data=[
+                john_one,
+                john_two,
+            ],
+        )
 
         response = atlas.ask("Change John city's city to Embu")
 
@@ -359,14 +390,19 @@ class TestAtlasUpdateSafety(unittest.TestCase):
 
         atlas.context["customer"] = customer
 
-        mock_find_customer.return_value = [customer]
+        mock_find_customer.return_value = ToolResult(
+            success=True,
+            action="find_customer",
+            message="Found 1 matching customer(s).",
+            data=[customer],
+        )
 
-        mock_update_customer.return_value = {
-            "success": False,
-            "action": "update_customer",
-            "message": "Update failed.",
-            "data": None,
-        }
+        mock_update_customer.return_value = ToolResult(
+            success=False,
+            action="update_customer",
+            message="Update failed.",
+            data=None,
+        )
 
         response = atlas.ask("Change John Kamau's city to Embu")
 
@@ -406,7 +442,12 @@ class TestAtlasLookupSafety(unittest.TestCase):
             },
         ]
 
-        mock_find_customer.return_value = customers
+        mock_find_customer.return_value = ToolResult(
+            success=True,
+            action="find_customer",
+            message="Found 2 matching customer(s).",
+            data=customers,
+        )
 
         atlas = Atlas()
 
@@ -427,7 +468,12 @@ class TestAtlasLookupSafety(unittest.TestCase):
         mock_find_customer,
     ):
 
-        mock_find_customer.return_value = []
+        mock_find_customer.return_value = ToolResult(
+            success=True,
+            action="find_customer",
+            message="Found 0 matching customer(s).",
+            data=[],
+        )
 
         atlas = Atlas()
 
@@ -460,14 +506,19 @@ class TestAtlasDeleteSafety(unittest.TestCase):
             "city": "Thika",
         }
 
-        mock_find_customer.return_value = [customer]
+        mock_find_customer.return_value = ToolResult(
+            success=True,
+            action="find_customer",
+            message="Found 1 matching customer(s).",
+            data=[customer],
+        )
 
-        mock_delete_customer.return_value = {
-            "success": False,
-            "action": "delete_customer",
-            "message": "User declined customer deletion.",
-            "data": None,
-        }
+        mock_delete_customer.return_value = ToolResult(
+            success=False,
+            action="delete_customer",
+            message="User declined customer deletion.",
+            data=None,
+        )
 
         atlas = Atlas()
 
