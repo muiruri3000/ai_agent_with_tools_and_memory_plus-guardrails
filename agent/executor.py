@@ -4,6 +4,7 @@ from agent.registry import TOOLS
 from agent.results import ToolResult
 from security.permissions import requires_confirmation
 from security.tool_registry import TOOL_PERMISSIONS
+from audit.logger import AuditLogger
 
 
 class ToolExecutor:
@@ -16,6 +17,7 @@ class ToolExecutor:
 
     def __init__(self):
         self.tools = {tool.__name__: tool for tool in TOOLS}
+        self.audit_logger = AuditLogger()
 
     def get_tool_level(self, function_name: str):
         """
@@ -26,8 +28,7 @@ class ToolExecutor:
 
         if not level:
             raise ValueError(
-                f"No authorization policy exists for tool: "
-                f"{function_name}"
+                f"No authorization policy exists for tool: " f"{function_name}"
             )
 
         return level
@@ -58,6 +59,9 @@ class ToolExecutor:
     def execute(self, function_name: str, arguments: dict):
         """
         Execute a registered and authorized tool by name.
+
+        Every execution attempt and outcome is recorded
+        in the audit log.
         """
 
         print("\n⚙️ EXECUTOR")
@@ -67,29 +71,72 @@ class ToolExecutor:
         tool = self.tools.get(function_name)
 
         if not tool:
-            raise ValueError(
-                f"Unknown tool requested: {function_name}"
-            )
+            raise ValueError(f"Unknown tool requested: {function_name}")
 
         level = self.get_tool_level(function_name)
+        confirmation_required = self.requires_confirmation(function_name)
 
         print(f"🔐 PERMISSION LEVEL: {level.value}")
-        print(
-            "🔐 CONFIRMATION REQUIRED: "
-            f"{self.requires_confirmation(function_name)}"
-        )
+        print("🔐 CONFIRMATION REQUIRED: " f"{confirmation_required}")
 
         if not self.authorize(function_name):
-            raise PermissionError(
-                f"Tool execution is not authorized: "
-                f"{function_name}"
+            self.audit_logger.log(
+                event="tool_denied",
+                tool=function_name,
+                permission=level.value,
+                arguments=arguments,
+                confirmation_required=confirmation_required,
+                success=False,
+                message="Tool execution was not authorized.",
             )
 
-        result = tool(**arguments)
+            raise PermissionError(
+                f"Tool execution is not authorized: " f"{function_name}"
+            )
 
-        print(f"⚙️ RESULT: {result}")
+        self.audit_logger.log(
+            event="tool_requested",
+            tool=function_name,
+            permission=level.value,
+            arguments=arguments,
+            confirmation_required=confirmation_required,
+        )
 
-        return result
+        try:
+            result = tool(**arguments)
+
+            success = result.success if isinstance(result, ToolResult) else True
+
+            message = result.message if isinstance(result, ToolResult) else str(result)
+
+            self.audit_logger.log(
+                event="tool_completed",
+                tool=function_name,
+                permission=level.value,
+                arguments=arguments,
+                confirmation_required=confirmation_required,
+                success=success,
+                message=message,
+            )
+
+            print(f"⚙️ RESULT: {result}")
+
+            return result
+
+        except Exception as exc:
+            self.audit_logger.log(
+                event="tool_failed",
+                tool=function_name,
+                permission=level.value,
+                arguments=arguments,
+                confirmation_required=confirmation_required,
+                success=False,
+                message=str(exc),
+            )
+
+            print(f"❌ TOOL ERROR: {function_name}: {exc}")
+
+            raise
 
     def serialize_result(self, result) -> dict:
         """
