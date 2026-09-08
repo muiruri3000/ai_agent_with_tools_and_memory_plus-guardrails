@@ -6,6 +6,7 @@ from agent.tools import (
     delete_customer,
 )
 from agent.executor import ToolExecutor
+from agent.results import ToolResult
 from google import genai
 from google.genai import types
 import re
@@ -26,11 +27,11 @@ from agent.router import (
 )
 
 
-
 class Atlas:
 
-    def __init__(self, persona=ATLAS):
+    MAX_TOOL_ITERATIONS = 5
 
+    def __init__(self, persona=ATLAS):
         self.persona = persona
         self.context = {
             "customer": None,
@@ -623,26 +624,56 @@ class Atlas:
 
     def handle_gemini(self, message: str) -> str:
         """
-        Handle requests that are not intercepted
-        by deterministic application logic.
+        Handle requests that require Gemini reasoning and tools.
 
-        Gemini may request one or more tools. Atlas executes
-        those tools through ToolExecutor and sends the results
-        back to Gemini for the final response.
+        Tool failures are converted into structured ToolResults
+        and returned to Gemini so the model can decide whether
+        to recover, retry, use another tool, or explain the
+        limitation to the user.
         """
 
         response = self.chat.send_message(message)
 
+        tool_iterations = 0
+
         while response.function_calls:
+            tool_iterations += 1
+
+            if tool_iterations > self.MAX_TOOL_ITERATIONS:
+                return (
+                    "I stopped the tool execution because the maximum "
+                    "number of tool iterations was reached."
+                )
+
+            print(f"\n🧠 AGENT ITERATION: {tool_iterations}")
+
             function_responses = []
 
             for function_call in response.function_calls:
-                result = self.executor.execute(
-                    function_call.name,
-                    dict(function_call.args),
-                )
 
-                serialized_result = self.executor.serialize_result(result)
+                try:
+                    result = self.executor.execute(
+                        function_call.name,
+                        dict(function_call.args),
+                    )
+
+                except Exception as exc:
+                    print(
+                        f"❌ TOOL ERROR: {function_call.name}: {exc}"
+                    )
+
+                    result = ToolResult(
+                        success=False,
+                        action=function_call.name,
+                        message=(
+                            f"Tool execution failed: {exc}"
+                        ),
+                        data=None,
+                    )
+
+                serialized_result = self.executor.serialize_result(
+                    result
+                )
 
                 function_responses.append(
                     types.Part.from_function_response(

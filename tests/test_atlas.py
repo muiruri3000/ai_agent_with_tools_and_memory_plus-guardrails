@@ -539,3 +539,520 @@ class TestAtlasDeleteSafety(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestAtlasAgenticLoop(unittest.TestCase):
+
+    @patch("agent.atlas.genai.Client")
+    def test_multiple_tool_calls_in_one_iteration(
+        self,
+        mock_client,
+    ):
+        atlas = Atlas()
+
+        tool_call_1 = type(
+            "FunctionCall",
+            (),
+            {
+                "name": "web_search",
+                "args": {"query": "latest AWS Lambda features"},
+            },
+        )()
+
+        tool_call_2 = type(
+            "FunctionCall",
+            (),
+            {
+                "name": "web_search",
+                "args": {"query": "latest AWS Step Functions features"},
+            },
+        )()
+
+        first_response = type(
+            "Response",
+            (),
+            {
+                "function_calls": [tool_call_1, tool_call_2],
+                "text": None,
+            },
+        )()
+
+        final_response = type(
+            "Response",
+            (),
+            {
+                "function_calls": [],
+                "text": "Here is the comparison.",
+            },
+        )()
+
+        atlas.chat.send_message.side_effect = [
+            first_response,
+            final_response,
+        ]
+
+        atlas.executor.execute = unittest.mock.Mock(
+            side_effect=[
+                ToolResult(
+                    success=True,
+                    action="web_search",
+                    message="Lambda results",
+                    data=[],
+                ),
+                ToolResult(
+                    success=True,
+                    action="web_search",
+                    message="Step Functions results",
+                    data=[],
+                ),
+            ]
+        )
+
+        atlas.executor.serialize_result = unittest.mock.Mock(
+            side_effect=lambda result: {
+                "success": result.success,
+                "action": result.action,
+                "message": result.message,
+                "data": result.data,
+            }
+        )
+
+        response = atlas.handle_gemini(
+            "Compare the latest AWS Lambda and Step Functions features."
+        )
+
+        self.assertEqual(
+            response,
+            "Here is the comparison.",
+        )
+
+        self.assertEqual(
+            atlas.executor.execute.call_count,
+            2,
+        )
+
+        calls = atlas.executor.execute.call_args_list
+
+        self.assertEqual(
+            calls[0].args[0],
+            "web_search",
+        )
+
+        self.assertEqual(
+            calls[0].args[1],
+            {"query": "latest AWS Lambda features"},
+        )
+
+        self.assertEqual(
+            calls[1].args[0],
+            "web_search",
+        )
+
+        self.assertEqual(
+            calls[1].args[1],
+            {"query": "latest AWS Step Functions features"},
+        )
+
+        self.assertEqual(
+            atlas.chat.send_message.call_count,
+            2,
+        )
+
+
+    @patch("agent.atlas.genai.Client")
+    def test_sequential_tool_calls_across_iterations(
+        self,
+        mock_client,
+    ):
+        atlas = Atlas()
+
+        tool_call_1 = type(
+            "FunctionCall",
+            (),
+            {
+                "name": "web_search",
+                "args": {"query": "AWS Lambda"},
+            },
+        )()
+
+        tool_call_2 = type(
+            "FunctionCall",
+            (),
+            {
+                "name": "web_search",
+                "args": {"query": "AWS Step Functions"},
+            },
+        )()
+
+        response_1 = type(
+            "Response",
+            (),
+            {
+                "function_calls": [tool_call_1],
+                "text": None,
+            },
+        )()
+
+        response_2 = type(
+            "Response",
+            (),
+            {
+                "function_calls": [tool_call_2],
+                "text": None,
+            },
+        )()
+
+        final_response = type(
+            "Response",
+            (),
+            {
+                "function_calls": [],
+                "text": "Comparison complete.",
+            },
+        )()
+
+        atlas.chat.send_message.side_effect = [
+            response_1,
+            response_2,
+            final_response,
+        ]
+
+        atlas.executor.execute = unittest.mock.Mock(
+            side_effect=[
+                ToolResult(
+                    success=True,
+                    action="web_search",
+                    message="Lambda result",
+                    data=[],
+                ),
+                ToolResult(
+                    success=True,
+                    action="web_search",
+                    message="Step Functions result",
+                    data=[],
+                ),
+            ]
+        )
+
+        atlas.executor.serialize_result = unittest.mock.Mock(
+            side_effect=lambda result: {
+                "success": result.success,
+                "action": result.action,
+                "message": result.message,
+                "data": result.data,
+            }
+        )
+
+        response = atlas.handle_gemini(
+            "Compare Lambda and Step Functions."
+        )
+
+        self.assertEqual(
+            response,
+            "Comparison complete.",
+        )
+
+        self.assertEqual(
+            atlas.executor.execute.call_count,
+            2,
+        )
+
+        self.assertEqual(
+            atlas.chat.send_message.call_count,
+            3,
+        )
+
+        calls = atlas.executor.execute.call_args_list
+
+        self.assertEqual(
+            calls[0].args[1],
+            {"query": "AWS Lambda"},
+        )
+
+        self.assertEqual(
+            calls[1].args[1],
+            {"query": "AWS Step Functions"},
+        )
+
+
+    @patch("agent.atlas.genai.Client")
+    def test_max_tool_iterations_stops_runaway_loop(
+        self,
+        mock_client,
+    ):
+        atlas = Atlas()
+
+        tool_call = type(
+            "FunctionCall",
+            (),
+            {
+                "name": "web_search",
+                "args": {"query": "AWS Lambda"},
+            },
+        )()
+
+        looping_response = type(
+            "Response",
+            (),
+            {
+                "function_calls": [tool_call],
+                "text": None,
+            },
+        )()
+
+        atlas.chat.send_message.return_value = looping_response
+
+        atlas.executor.execute = unittest.mock.Mock(
+            return_value=ToolResult(
+                success=True,
+                action="web_search",
+                message="Search result",
+                data=[],
+            )
+        )
+
+        atlas.executor.serialize_result = unittest.mock.Mock(
+            return_value={
+                "success": True,
+                "action": "web_search",
+                "message": "Search result",
+                "data": [],
+            }
+        )
+
+        response = atlas.handle_gemini(
+            "Keep searching forever."
+        )
+
+        self.assertEqual(
+            response,
+            "I stopped the tool execution because the maximum "
+            "number of tool iterations was reached.",
+        )
+
+        self.assertEqual(
+            atlas.executor.execute.call_count,
+            Atlas.MAX_TOOL_ITERATIONS,
+        )
+
+        self.assertEqual(
+            atlas.chat.send_message.call_count,
+            Atlas.MAX_TOOL_ITERATIONS + 1,
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+class TestAtlasToolFailureRecovery(unittest.TestCase):
+
+    @patch("agent.atlas.genai.Client")
+    def test_tool_failure_is_returned_to_gemini(
+        self,
+        mock_client,
+    ):
+        atlas = Atlas()
+
+        tool_call = type(
+            "FunctionCall",
+            (),
+            {
+                "name": "web_search",
+                "args": {
+                    "query": "latest AWS Lambda features"
+                },
+            },
+        )()
+
+        first_response = type(
+            "Response",
+            (),
+            {
+                "function_calls": [tool_call],
+                "text": None,
+            },
+        )()
+
+        final_response = type(
+            "Response",
+            (),
+            {
+                "function_calls": [],
+                "text": "The search failed, so I cannot verify the latest features.",
+            },
+        )()
+
+        atlas.chat.send_message.side_effect = [
+            first_response,
+            final_response,
+        ]
+
+        atlas.executor.execute = unittest.mock.Mock(
+            side_effect=RuntimeError(
+                "Network connection failed."
+            )
+        )
+
+        atlas.executor.serialize_result = unittest.mock.Mock(
+            side_effect=lambda result: {
+                "success": result.success,
+                "action": result.action,
+                "message": result.message,
+                "data": result.data,
+            }
+        )
+
+        response = atlas.handle_gemini(
+            "Find the latest AWS Lambda features."
+        )
+
+        self.assertEqual(
+            response,
+            "The search failed, so I cannot verify the latest features.",
+        )
+
+        atlas.executor.execute.assert_called_once_with(
+            "web_search",
+            {
+                "query": "latest AWS Lambda features"
+            },
+        )
+
+        atlas.executor.serialize_result.assert_called_once()
+
+        failed_result = (
+            atlas.executor.serialize_result.call_args.args[0]
+        )
+
+        self.assertFalse(
+            failed_result.success
+        )
+
+        self.assertEqual(
+            failed_result.action,
+            "web_search",
+        )
+
+        self.assertIn(
+            "Tool execution failed",
+            failed_result.message,
+        )
+
+        self.assertIn(
+            "Network connection failed",
+            failed_result.message,
+        )
+
+        self.assertEqual(
+            atlas.chat.send_message.call_count,
+            2,
+        )
+
+
+    @patch("agent.atlas.genai.Client")
+    def test_tool_failure_does_not_break_remaining_tool_calls(
+        self,
+        mock_client,
+    ):
+        atlas = Atlas()
+
+        failed_call = type(
+            "FunctionCall",
+            (),
+            {
+                "name": "web_search",
+                "args": {
+                    "query": "AWS Lambda"
+                },
+            },
+        )()
+
+        successful_call = type(
+            "FunctionCall",
+            (),
+            {
+                "name": "web_search",
+                "args": {
+                    "query": "AWS Step Functions"
+                },
+            },
+        )()
+
+        first_response = type(
+            "Response",
+            (),
+            {
+                "function_calls": [
+                    failed_call,
+                    successful_call,
+                ],
+                "text": None,
+            },
+        )()
+
+        final_response = type(
+            "Response",
+            (),
+            {
+                "function_calls": [],
+                "text": "I recovered from the failed Lambda search.",
+            },
+        )()
+
+        atlas.chat.send_message.side_effect = [
+            first_response,
+            final_response,
+        ]
+
+        atlas.executor.execute = unittest.mock.Mock(
+            side_effect=[
+                RuntimeError("Lambda search failed."),
+                ToolResult(
+                    success=True,
+                    action="web_search",
+                    message="Step Functions search succeeded.",
+                    data=[],
+                ),
+            ]
+        )
+
+        atlas.executor.serialize_result = unittest.mock.Mock(
+            side_effect=lambda result: {
+                "success": result.success,
+                "action": result.action,
+                "message": result.message,
+                "data": result.data,
+            }
+        )
+
+        response = atlas.handle_gemini(
+            "Search Lambda and Step Functions."
+        )
+
+        self.assertEqual(
+            response,
+            "I recovered from the failed Lambda search.",
+        )
+
+        self.assertEqual(
+            atlas.executor.execute.call_count,
+            2,
+        )
+
+        self.assertEqual(
+            atlas.executor.serialize_result.call_count,
+            2,
+        )
+
+        results = [
+            call.args[0]
+            for call in atlas.executor.serialize_result.call_args_list
+        ]
+
+        self.assertFalse(results[0].success)
+        self.assertTrue(results[1].success)
+
+
+if __name__ == "__main__":
+    unittest.main()
