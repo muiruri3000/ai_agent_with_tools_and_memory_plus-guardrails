@@ -2,6 +2,8 @@ from dataclasses import asdict, is_dataclass
 
 from agent.registry import TOOLS
 from agent.results import ToolResult
+from security.permissions import requires_confirmation
+from security.tool_registry import TOOL_PERMISSIONS
 
 
 class ToolExecutor:
@@ -12,35 +14,15 @@ class ToolExecutor:
     function calls and Atlas tool implementations.
     """
 
-    TOOL_LEVELS = {
-        "get_customers": "READ",
-        "web_search": "EXTERNAL_READ",
-        "remember": "MEMORY_WRITE",
-        "recall": "MEMORY_READ",
-        "forget": "MEMORY_WRITE",
-        "create_customer": "WRITE",
-        "update_customer": "WRITE",
-        "delete_customer": "DESTRUCTIVE",
-    }
-
-    ALLOWED_LEVELS = {
-        "READ",
-        "EXTERNAL_READ",
-        "MEMORY_READ",
-        "MEMORY_WRITE",
-        "WRITE",
-        "DESTRUCTIVE",
-    }
-
     def __init__(self):
         self.tools = {tool.__name__: tool for tool in TOOLS}
 
-    def get_tool_level(self, function_name: str) -> str:
+    def get_tool_level(self, function_name: str):
         """
-        Return the authorization level assigned to a tool.
+        Return the security permission assigned to a tool.
         """
 
-        level = self.TOOL_LEVELS.get(function_name)
+        level = TOOL_PERMISSIONS.get(function_name)
 
         if not level:
             raise ValueError(
@@ -52,19 +34,26 @@ class ToolExecutor:
 
     def authorize(self, function_name: str) -> bool:
         """
-        Determine whether a registered tool is authorized
-        to execute.
-
-        Confirmation for writes/destructive operations is
-        handled by the tools themselves.
+        Determine whether a registered tool has a valid
+        security policy.
         """
 
         if function_name not in self.tools:
             return False
 
+        self.get_tool_level(function_name)
+
+        return True
+
+    def requires_confirmation(self, function_name: str) -> bool:
+        """
+        Determine whether a tool requires explicit
+        user confirmation according to the security policy.
+        """
+
         level = self.get_tool_level(function_name)
 
-        return level in self.ALLOWED_LEVELS
+        return requires_confirmation(level)
 
     def execute(self, function_name: str, arguments: dict):
         """
@@ -84,7 +73,11 @@ class ToolExecutor:
 
         level = self.get_tool_level(function_name)
 
-        print(f"🔐 AUTHORIZATION LEVEL: {level}")
+        print(f"🔐 PERMISSION LEVEL: {level.value}")
+        print(
+            "🔐 CONFIRMATION REQUIRED: "
+            f"{self.requires_confirmation(function_name)}"
+        )
 
         if not self.authorize(function_name):
             raise PermissionError(

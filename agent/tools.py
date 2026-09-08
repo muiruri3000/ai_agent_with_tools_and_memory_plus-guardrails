@@ -10,6 +10,7 @@ from database.db import (
 )
 from tools.web import web_search as perform_web_search
 from security.confirmation import request_confirmation
+from security.permissions import PermissionLevel
 from memory.memory import (
     remember as store_memory,
     recall as get_memories,
@@ -131,6 +132,7 @@ def remember(fact: str) -> ToolResult:
     approved = request_confirmation(
         action="Save memory",
         description=(f"Atlas wants to remember: {fact}"),
+        permission_level=PermissionLevel.MEMORY_WRITE,
     )
 
     if not approved:
@@ -191,6 +193,7 @@ def forget(fact: str) -> ToolResult:
     approved = request_confirmation(
         action="Delete memory",
         description=(f"Atlas wants to forget: {fact}"),
+        permission_level=PermissionLevel.MEMORY_WRITE,
     )
 
     if not approved:
@@ -239,6 +242,7 @@ def create_customer(
     approved = request_confirmation(
         action="Create customer",
         description=(f"Name: {name}\n" f"Email: {email}\n" f"City: {city}"),
+        permission_level=PermissionLevel.WRITE,
     )
 
     if not approved:
@@ -444,6 +448,7 @@ def update_customer(
     approved = request_confirmation(
         action="Update customer",
         description=description,
+        permission_level=PermissionLevel.WRITE,
     )
 
     if not approved:
@@ -573,6 +578,7 @@ def delete_customer(customer_id: int) -> ToolResult:
             f"Email: {customer['email']}\n"
             f"City: {customer['city']}"
         ),
+        permission_level=PermissionLevel.DESTRUCTIVE,
     )
 
     if not approved:

@@ -535,12 +535,6 @@ class TestAtlasDeleteSafety(unittest.TestCase):
             atlas.context["customer"]["id"],
             3,
         )
-
-
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TestAtlasAgenticLoop(unittest.TestCase):
 
     @patch("agent.atlas.genai.Client")
@@ -839,12 +833,6 @@ class TestAtlasAgenticLoop(unittest.TestCase):
             atlas.chat.send_message.call_count,
             Atlas.MAX_TOOL_ITERATIONS + 1,
         )
-
-
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TestAtlasToolFailureRecovery(unittest.TestCase):
 
     @patch("agent.atlas.genai.Client")
@@ -1052,117 +1040,152 @@ class TestAtlasToolFailureRecovery(unittest.TestCase):
 
         self.assertFalse(results[0].success)
         self.assertTrue(results[1].success)
-
-
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TestToolAuthorization(unittest.TestCase):
 
     def test_all_registered_tools_have_authorization_policy(self):
         from agent.executor import ToolExecutor
+        from security.tool_registry import TOOL_PERMISSIONS
 
         executor = ToolExecutor()
 
         for tool_name in executor.tools:
             self.assertIn(
                 tool_name,
-                executor.TOOL_LEVELS,
+                TOOL_PERMISSIONS,
             )
 
-    def test_read_tool_is_authorized(self):
+    def test_read_tools_have_read_level(self):
         from agent.executor import ToolExecutor
+        from security.permissions import PermissionLevel
 
         executor = ToolExecutor()
 
-        self.assertEqual(
-            executor.get_tool_level("get_customers"),
-            "READ",
-        )
+        for tool_name in [
+            "get_customers",
+        ]:
+            self.assertEqual(
+                executor.get_tool_level(tool_name),
+                PermissionLevel.READ,
+            )
 
-        self.assertTrue(
-            executor.authorize("get_customers")
-        )
+            self.assertTrue(
+                executor.authorize(tool_name)
+            )
 
-    def test_external_read_tool_is_authorized(self):
+    def test_external_read_tool_has_external_read_level(self):
         from agent.executor import ToolExecutor
+        from security.permissions import PermissionLevel
 
         executor = ToolExecutor()
 
         self.assertEqual(
             executor.get_tool_level("web_search"),
-            "EXTERNAL_READ",
+            PermissionLevel.EXTERNAL_READ,
         )
 
         self.assertTrue(
             executor.authorize("web_search")
         )
 
-    def test_memory_read_tool_is_authorized(self):
+    def test_memory_read_tool_has_memory_read_level(self):
         from agent.executor import ToolExecutor
+        from security.permissions import PermissionLevel
 
         executor = ToolExecutor()
 
         self.assertEqual(
             executor.get_tool_level("recall"),
-            "MEMORY_READ",
+            PermissionLevel.MEMORY_READ,
         )
 
         self.assertTrue(
             executor.authorize("recall")
         )
 
-    def test_memory_write_tool_has_correct_level(self):
+    def test_memory_write_tools_have_memory_write_level(self):
         from agent.executor import ToolExecutor
+        from security.permissions import PermissionLevel
 
         executor = ToolExecutor()
 
-        self.assertEqual(
-            executor.get_tool_level("remember"),
-            "MEMORY_WRITE",
-        )
+        for tool_name in [
+            "remember",
+            "forget",
+        ]:
+            self.assertEqual(
+                executor.get_tool_level(tool_name),
+                PermissionLevel.MEMORY_WRITE,
+            )
 
-        self.assertTrue(
-            executor.authorize("remember")
-        )
+            self.assertTrue(
+                executor.authorize(tool_name)
+            )
 
     def test_customer_write_tools_have_write_level(self):
         from agent.executor import ToolExecutor
+        from security.permissions import PermissionLevel
 
         executor = ToolExecutor()
 
-        self.assertEqual(
-            executor.get_tool_level("create_customer"),
-            "WRITE",
-        )
+        for tool_name in [
+            "create_customer",
+            "update_customer",
+        ]:
+            self.assertEqual(
+                executor.get_tool_level(tool_name),
+                PermissionLevel.WRITE,
+            )
 
-        self.assertEqual(
-            executor.get_tool_level("update_customer"),
-            "WRITE",
-        )
-
-        self.assertTrue(
-            executor.authorize("create_customer")
-        )
-
-        self.assertTrue(
-            executor.authorize("update_customer")
-        )
+            self.assertTrue(
+                executor.authorize(tool_name)
+            )
 
     def test_delete_customer_has_destructive_level(self):
         from agent.executor import ToolExecutor
+        from security.permissions import PermissionLevel
 
         executor = ToolExecutor()
 
         self.assertEqual(
             executor.get_tool_level("delete_customer"),
-            "DESTRUCTIVE",
+            PermissionLevel.DESTRUCTIVE,
         )
 
         self.assertTrue(
             executor.authorize("delete_customer")
         )
+
+    def test_read_operations_do_not_require_confirmation(self):
+        from agent.executor import ToolExecutor
+
+        executor = ToolExecutor()
+
+        for tool_name in [
+            "get_customers",
+            "get_customer_by_id",
+            "find_customer",
+            "web_search",
+            "recall",
+        ]:
+            self.assertFalse(
+                executor.requires_confirmation(tool_name)
+            )
+
+    def test_write_operations_require_confirmation(self):
+        from agent.executor import ToolExecutor
+
+        executor = ToolExecutor()
+
+        for tool_name in [
+            "remember",
+            "forget",
+            "create_customer",
+            "update_customer",
+            "delete_customer",
+        ]:
+            self.assertTrue(
+                executor.requires_confirmation(tool_name)
+            )
 
     def test_unknown_tool_has_no_authorization_policy(self):
         from agent.executor import ToolExecutor
@@ -1180,7 +1203,111 @@ class TestToolAuthorization(unittest.TestCase):
         self.assertFalse(
             executor.authorize("unknown_tool")
         )
+class TestConfirmationPolicy(unittest.TestCase):
 
+    def test_read_permission_does_not_require_confirmation(self):
+        from security.confirmation import request_confirmation
+        from security.permissions import PermissionLevel
+        from unittest.mock import patch
+
+        with patch("builtins.input") as mock_input:
+            result = request_confirmation(
+                action="Read customers",
+                description="Retrieve customer list.",
+                permission_level=PermissionLevel.READ,
+            )
+
+        self.assertTrue(result)
+        mock_input.assert_not_called()
+
+    def test_external_read_permission_does_not_require_confirmation(self):
+        from security.confirmation import request_confirmation
+        from security.permissions import PermissionLevel
+        from unittest.mock import patch
+
+        with patch("builtins.input") as mock_input:
+            result = request_confirmation(
+                action="Web search",
+                description="Search the Internet.",
+                permission_level=PermissionLevel.EXTERNAL_READ,
+            )
+
+        self.assertTrue(result)
+        mock_input.assert_not_called()
+
+    def test_memory_read_permission_does_not_require_confirmation(self):
+        from security.confirmation import request_confirmation
+        from security.permissions import PermissionLevel
+        from unittest.mock import patch
+
+        with patch("builtins.input") as mock_input:
+            result = request_confirmation(
+                action="Recall memory",
+                description="Retrieve stored memories.",
+                permission_level=PermissionLevel.MEMORY_READ,
+            )
+
+        self.assertTrue(result)
+        mock_input.assert_not_called()
+
+    def test_memory_write_permission_requires_confirmation(self):
+        from security.confirmation import request_confirmation
+        from security.permissions import PermissionLevel
+        from unittest.mock import patch
+
+        with patch("builtins.input", return_value="y") as mock_input:
+            result = request_confirmation(
+                action="Save memory",
+                description="Remember this fact.",
+                permission_level=PermissionLevel.MEMORY_WRITE,
+            )
+
+        self.assertTrue(result)
+        mock_input.assert_called_once()
+
+    def test_write_permission_requires_confirmation(self):
+        from security.confirmation import request_confirmation
+        from security.permissions import PermissionLevel
+        from unittest.mock import patch
+
+        with patch("builtins.input", return_value="y") as mock_input:
+            result = request_confirmation(
+                action="Create customer",
+                description="Create a new customer.",
+                permission_level=PermissionLevel.WRITE,
+            )
+
+        self.assertTrue(result)
+        mock_input.assert_called_once()
+
+    def test_destructive_permission_requires_confirmation(self):
+        from security.confirmation import request_confirmation
+        from security.permissions import PermissionLevel
+        from unittest.mock import patch
+
+        with patch("builtins.input", return_value="y") as mock_input:
+            result = request_confirmation(
+                action="Delete customer",
+                description="Delete customer 10.",
+                permission_level=PermissionLevel.DESTRUCTIVE,
+            )
+
+        self.assertTrue(result)
+        mock_input.assert_called_once()
+
+    def test_confirmation_decline_returns_false(self):
+        from security.confirmation import request_confirmation
+        from security.permissions import PermissionLevel
+        from unittest.mock import patch
+
+        with patch("builtins.input", return_value="n"):
+            result = request_confirmation(
+                action="Delete customer",
+                description="Delete customer 10.",
+                permission_level=PermissionLevel.DESTRUCTIVE,
+            )
+
+        self.assertFalse(result)
 
 if __name__ == "__main__":
     unittest.main()
