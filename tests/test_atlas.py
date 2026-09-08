@@ -1056,3 +1056,131 @@ class TestAtlasToolFailureRecovery(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestToolAuthorization(unittest.TestCase):
+
+    def test_all_registered_tools_have_authorization_policy(self):
+        from agent.executor import ToolExecutor
+
+        executor = ToolExecutor()
+
+        for tool_name in executor.tools:
+            self.assertIn(
+                tool_name,
+                executor.TOOL_LEVELS,
+            )
+
+    def test_read_tool_is_authorized(self):
+        from agent.executor import ToolExecutor
+
+        executor = ToolExecutor()
+
+        self.assertEqual(
+            executor.get_tool_level("get_customers"),
+            "READ",
+        )
+
+        self.assertTrue(
+            executor.authorize("get_customers")
+        )
+
+    def test_external_read_tool_is_authorized(self):
+        from agent.executor import ToolExecutor
+
+        executor = ToolExecutor()
+
+        self.assertEqual(
+            executor.get_tool_level("web_search"),
+            "EXTERNAL_READ",
+        )
+
+        self.assertTrue(
+            executor.authorize("web_search")
+        )
+
+    def test_memory_read_tool_is_authorized(self):
+        from agent.executor import ToolExecutor
+
+        executor = ToolExecutor()
+
+        self.assertEqual(
+            executor.get_tool_level("recall"),
+            "MEMORY_READ",
+        )
+
+        self.assertTrue(
+            executor.authorize("recall")
+        )
+
+    def test_memory_write_tool_has_correct_level(self):
+        from agent.executor import ToolExecutor
+
+        executor = ToolExecutor()
+
+        self.assertEqual(
+            executor.get_tool_level("remember"),
+            "MEMORY_WRITE",
+        )
+
+        self.assertTrue(
+            executor.authorize("remember")
+        )
+
+    def test_customer_write_tools_have_write_level(self):
+        from agent.executor import ToolExecutor
+
+        executor = ToolExecutor()
+
+        self.assertEqual(
+            executor.get_tool_level("create_customer"),
+            "WRITE",
+        )
+
+        self.assertEqual(
+            executor.get_tool_level("update_customer"),
+            "WRITE",
+        )
+
+        self.assertTrue(
+            executor.authorize("create_customer")
+        )
+
+        self.assertTrue(
+            executor.authorize("update_customer")
+        )
+
+    def test_delete_customer_has_destructive_level(self):
+        from agent.executor import ToolExecutor
+
+        executor = ToolExecutor()
+
+        self.assertEqual(
+            executor.get_tool_level("delete_customer"),
+            "DESTRUCTIVE",
+        )
+
+        self.assertTrue(
+            executor.authorize("delete_customer")
+        )
+
+    def test_unknown_tool_has_no_authorization_policy(self):
+        from agent.executor import ToolExecutor
+
+        executor = ToolExecutor()
+
+        with self.assertRaises(ValueError):
+            executor.get_tool_level("unknown_tool")
+
+    def test_unknown_tool_is_not_authorized(self):
+        from agent.executor import ToolExecutor
+
+        executor = ToolExecutor()
+
+        self.assertFalse(
+            executor.authorize("unknown_tool")
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()
