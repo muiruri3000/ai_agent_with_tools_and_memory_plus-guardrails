@@ -1,4 +1,7 @@
 from dataclasses import asdict, is_dataclass
+import inspect
+import signal
+from typing import get_type_hints
 
 from agent.registry import TOOLS
 from agent.results import ToolResult
@@ -6,7 +9,6 @@ from security.permissions import requires_confirmation
 from security.tool_registry import TOOL_PERMISSIONS
 from audit.logger import AuditLogger
 from security.timeouts import get_tool_timeout
-import signal
 
 
 class ToolExecutor:
@@ -62,7 +64,8 @@ class ToolExecutor:
         """
         Execute a registered and authorized tool by name.
 
-        Every execution attempt and outcome is recorded
+        Every execution attempt, validation failure, timeout,
+        tool failure, and successful outcome is recorded
         in the audit log.
         """
 
@@ -104,14 +107,38 @@ class ToolExecutor:
             confirmation_required=confirmation_required,
         )
 
-        timeout_seconds = get_tool_timeout(
-            function_name
-        )
+        # -------------------------------------------------
+        # ARGUMENT VALIDATION
+        # -------------------------------------------------
 
-        print(
-            f"⏱️ TIMEOUT: "
-            f"{timeout_seconds} seconds"
-        )
+        try:
+            self.validate_arguments(
+                tool,
+                arguments,
+            )
+
+        except TypeError as exc:
+            self.audit_logger.log(
+                event="tool_validation_failed",
+                tool=function_name,
+                permission=level.value,
+                arguments=arguments,
+                confirmation_required=confirmation_required,
+                success=False,
+                message=str(exc),
+            )
+
+            print(f"❌ ARGUMENT VALIDATION FAILED: " f"{function_name}: {exc}")
+
+            raise
+
+        # -------------------------------------------------
+        # TOOL TIMEOUT
+        # -------------------------------------------------
+
+        timeout_seconds = get_tool_timeout(function_name)
+
+        print(f"⏱️ TIMEOUT: " f"{timeout_seconds} seconds")
 
         try:
             result = self._run_with_timeout(
@@ -149,10 +176,7 @@ class ToolExecutor:
                 message=str(exc),
             )
 
-            print(
-                f"⏱️ TOOL TIMEOUT: "
-                f"{function_name}: {exc}"
-            )
+            print(f"⏱️ TOOL TIMEOUT: " f"{function_name}: {exc}")
 
             raise
 
@@ -167,11 +191,54 @@ class ToolExecutor:
                 message=str(exc),
             )
 
-            print(f"❌ TOOL ERROR: {function_name}: {exc}")
+            print(f"❌ TOOL ERROR: " f"{function_name}: {exc}")
 
             raise
 
-    def _run_with_timeout(self, tool, arguments, timeout_seconds):
+    def validate_arguments(self, tool, arguments: dict):
+        """
+        Validate tool arguments before execution.
+
+        The tool's Python signature is the source of truth for:
+        - accepted argument names
+        - required arguments
+        - runtime argument types
+        """
+
+        if not isinstance(arguments, dict):
+            raise TypeError("Tool arguments must be provided as a dictionary.")
+
+        signature = inspect.signature(tool)
+
+        try:
+            signature.bind(**arguments)
+        except TypeError as exc:
+            raise TypeError(
+                f"Invalid arguments for tool " f"{tool.__name__}: {exc}"
+            ) from exc
+
+        type_hints = get_type_hints(tool)
+
+        for name, value in arguments.items():
+            expected_type = type_hints.get(name)
+
+            if expected_type is None:
+                continue
+
+            if not isinstance(value, expected_type):
+                raise TypeError(
+                    f"Invalid type for argument '{name}' "
+                    f"of tool '{tool.__name__}': "
+                    f"expected {expected_type.__name__}, "
+                    f"got {type(value).__name__}."
+                )
+
+    def _run_with_timeout(
+        self,
+        tool,
+        arguments,
+        timeout_seconds,
+    ):
         """
         Execute a tool with a hard execution timeout.
 
@@ -181,8 +248,7 @@ class ToolExecutor:
 
         def handle_timeout(signum, frame):
             raise TimeoutError(
-                f"Tool execution timed out after "
-                f"{timeout_seconds} seconds."
+                f"Tool execution timed out after " f"{timeout_seconds} seconds."
             )
 
         previous_handler = signal.signal(

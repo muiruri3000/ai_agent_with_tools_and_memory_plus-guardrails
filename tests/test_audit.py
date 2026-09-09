@@ -26,9 +26,7 @@ class TestAuditLogger(unittest.TestCase):
                 message="Test event.",
             )
 
-            records = log_path.read_text(
-                encoding="utf-8"
-            ).splitlines()
+            records = log_path.read_text(encoding="utf-8").splitlines()
 
             self.assertEqual(len(records), 1)
 
@@ -46,9 +44,7 @@ class TestAuditLogger(unittest.TestCase):
                 record["permission"],
                 "read",
             )
-            self.assertTrue(
-                record["success"]
-            )
+            self.assertTrue(record["success"])
             self.assertIn(
                 "timestamp",
                 record,
@@ -61,9 +57,7 @@ class TestExecutorAuditLogging(unittest.TestCase):
         executor = ToolExecutor()
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            executor.audit_logger = AuditLogger(
-                Path(tmpdir) / "audit.jsonl"
-            )
+            executor.audit_logger = AuditLogger(Path(tmpdir) / "audit.jsonl")
 
             result = executor.execute(
                 "get_customers",
@@ -78,9 +72,9 @@ class TestExecutorAuditLogging(unittest.TestCase):
             records = [
                 json.loads(line)
                 for line in (
-                    executor.audit_logger.log_path
-                    .read_text(encoding="utf-8")
-                    .splitlines()
+                    executor.audit_logger.log_path.read_text(
+                        encoding="utf-8"
+                    ).splitlines()
                 )
             ]
 
@@ -107,17 +101,13 @@ class TestExecutorAuditLogging(unittest.TestCase):
                 "get_customers",
             )
 
-            self.assertTrue(
-                records[1]["success"]
-            )
+            self.assertTrue(records[1]["success"])
 
     def test_failed_tool_execution_is_audited(self):
         executor = ToolExecutor()
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            executor.audit_logger = AuditLogger(
-                Path(tmpdir) / "audit.jsonl"
-            )
+            executor.audit_logger = AuditLogger(Path(tmpdir) / "audit.jsonl")
 
             with patch.dict(
                 executor.tools,
@@ -136,9 +126,9 @@ class TestExecutorAuditLogging(unittest.TestCase):
             records = [
                 json.loads(line)
                 for line in (
-                    executor.audit_logger.log_path
-                    .read_text(encoding="utf-8")
-                    .splitlines()
+                    executor.audit_logger.log_path.read_text(
+                        encoding="utf-8"
+                    ).splitlines()
                 )
             ]
 
@@ -156,15 +146,12 @@ class TestExecutorAuditLogging(unittest.TestCase):
                 "tool_failed",
             )
 
-            self.assertFalse(
-                records[1]["success"]
-            )
+            self.assertFalse(records[1]["success"])
+
             self.assertEqual(
                 records[1]["message"],
                 "Simulated failure",
             )
-
-
 
 
 class TestToolTimeout(unittest.TestCase):
@@ -174,6 +161,7 @@ class TestToolTimeout(unittest.TestCase):
 
         def slow_tool():
             import time
+
             time.sleep(2)
 
         with self.assertRaises(TimeoutError):
@@ -187,9 +175,7 @@ class TestToolTimeout(unittest.TestCase):
         executor = ToolExecutor()
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            executor.audit_logger = AuditLogger(
-                Path(tmpdir) / "audit.jsonl"
-            )
+            executor.audit_logger = AuditLogger(Path(tmpdir) / "audit.jsonl")
 
             with patch(
                 "agent.executor.get_tool_timeout",
@@ -197,11 +183,7 @@ class TestToolTimeout(unittest.TestCase):
             ):
                 with patch.dict(
                     executor.tools,
-                    {
-                        "get_customers": lambda: (
-                            __import__("time").sleep(2)
-                        )
-                    },
+                    {"get_customers": lambda: (__import__("time").sleep(2))},
                 ):
                     with self.assertRaises(TimeoutError):
                         executor.execute(
@@ -212,9 +194,9 @@ class TestToolTimeout(unittest.TestCase):
             records = [
                 json.loads(line)
                 for line in (
-                    executor.audit_logger.log_path
-                    .read_text(encoding="utf-8")
-                    .splitlines()
+                    executor.audit_logger.log_path.read_text(
+                        encoding="utf-8"
+                    ).splitlines()
                 )
             ]
 
@@ -238,14 +220,179 @@ class TestToolTimeout(unittest.TestCase):
                 "get_customers",
             )
 
-            self.assertFalse(
-                records[1]["success"]
-            )
+            self.assertFalse(records[1]["success"])
 
             self.assertIn(
                 "timed out",
                 records[1]["message"],
             )
+
+
+class TestToolArgumentValidation(unittest.TestCase):
+
+    def test_unknown_argument_is_rejected(self):
+        executor = ToolExecutor()
+
+        with self.assertRaises(TypeError):
+            executor.execute(
+                "get_customers",
+                {"unexpected": "value"},
+            )
+
+    def test_missing_required_argument_is_rejected(self):
+        executor = ToolExecutor()
+
+        with self.assertRaises(TypeError):
+            executor.execute(
+                "web_search",
+                {},
+            )
+
+    def test_invalid_argument_type_is_rejected(self):
+        executor = ToolExecutor()
+
+        with self.assertRaises(TypeError):
+            executor.execute(
+                "web_search",
+                {"query": 123},
+            )
+
+    def test_valid_arguments_are_accepted(self):
+        executor = ToolExecutor()
+
+        with patch(
+            "agent.executor.get_tool_timeout",
+            return_value=1,
+        ):
+            with patch.dict(
+                executor.tools,
+                {
+                    "web_search": lambda query: ToolResult(
+                        success=True,
+                        action="web_search",
+                        message="Test search completed.",
+                        data={"query": query},
+                    )
+                },
+            ):
+                result = executor.execute(
+                    "web_search",
+                    {"query": "AWS"},
+                )
+
+        self.assertIsInstance(
+            result,
+            ToolResult,
+        )
+
+        self.assertTrue(result.success)
+
+    def test_invalid_arguments_are_rejected_before_tool_execution(
+        self,
+    ):
+        executor = ToolExecutor()
+
+        tool_called = False
+
+        def test_tool(query):
+            nonlocal tool_called
+            tool_called = True
+
+        with patch.dict(
+            executor.tools,
+            {
+                "web_search": test_tool,
+            },
+        ):
+            with self.assertRaises(TypeError):
+                executor.execute(
+                    "web_search",
+                    {"wrong_argument": "value"},
+                )
+
+        self.assertFalse(tool_called)
+
+    def test_invalid_arguments_are_audited(self):
+        executor = ToolExecutor()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            executor.audit_logger = AuditLogger(Path(tmpdir) / "audit.jsonl")
+
+            with self.assertRaises(TypeError):
+                executor.execute(
+                    "web_search",
+                    {"wrong_argument": "value"},
+                )
+
+            records = [
+                json.loads(line)
+                for line in (
+                    executor.audit_logger.log_path.read_text(
+                        encoding="utf-8"
+                    ).splitlines()
+                )
+            ]
+
+            self.assertEqual(
+                len(records),
+                2,
+            )
+
+            self.assertEqual(
+                records[0]["event"],
+                "tool_requested",
+            )
+
+            self.assertEqual(
+                records[1]["event"],
+                "tool_validation_failed",
+            )
+
+            self.assertEqual(
+                records[1]["tool"],
+                "web_search",
+            )
+
+            self.assertFalse(records[1]["success"])
+
+            self.assertIn(
+                "Invalid arguments",
+                records[1]["message"],
+            )
+
+    def test_non_dict_arguments_are_rejected_and_audited(self):
+        executor = ToolExecutor()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            executor.audit_logger = AuditLogger(Path(tmpdir) / "audit.jsonl")
+
+            with self.assertRaises(TypeError):
+                executor.execute(
+                    "get_customers",
+                    None,
+                )
+
+            records = [
+                json.loads(line)
+                for line in (
+                    executor.audit_logger.log_path.read_text(
+                        encoding="utf-8"
+                    ).splitlines()
+                )
+            ]
+
+            self.assertEqual(
+                len(records),
+                2,
+            )
+
+            self.assertEqual(
+                records[1]["event"],
+                "tool_validation_failed",
+            )
+
+            self.assertFalse(records[1]["success"])
+
 
 if __name__ == "__main__":
     unittest.main()
