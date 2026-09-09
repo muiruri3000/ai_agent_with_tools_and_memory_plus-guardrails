@@ -11,6 +11,8 @@ from audit.logger import AuditLogger
 from security.timeouts import get_tool_timeout
 from security.input_constraints import validate_tool_values
 
+from security.roles import SecurityRole, role_allows
+
 
 class ToolExecutor:
     """
@@ -20,9 +22,13 @@ class ToolExecutor:
     function calls and Atlas tool implementations.
     """
 
-    def __init__(self):
+    def __init__(
+        self,
+        role: SecurityRole = SecurityRole.STANDARD,
+    ):
         self.tools = {tool.__name__: tool for tool in TOOLS}
         self.audit_logger = AuditLogger()
+        self.role = role
 
     def get_tool_level(self, function_name: str):
         """
@@ -38,6 +44,19 @@ class ToolExecutor:
 
         return level
 
+    def role_allows_tool(self, function_name: str) -> bool:
+        """
+        Determine whether the current security role
+        is permitted to execute a tool.
+        """
+
+        permission = self.get_tool_level(function_name)
+
+        return role_allows(
+            self.role,
+            permission,
+        )
+
     def authorize(self, function_name: str) -> bool:
         """
         Determine whether a registered tool has a valid
@@ -50,6 +69,17 @@ class ToolExecutor:
         self.get_tool_level(function_name)
 
         return True
+
+    def role_authorizes(self, function_name: str) -> bool:
+        """
+        Determine whether the current security role is permitted
+        to execute a tool.
+        """
+
+        if not self.role_authorizes(function_name):
+            return False
+
+        return self.role_allows_tool(function_name)
 
     def requires_confirmation(self, function_name: str) -> bool:
         """
@@ -73,7 +103,7 @@ class ToolExecutor:
         print("\n⚙️ EXECUTOR")
         print(f"⚙️ FUNCTION: {function_name}")
         print(f"⚙️ ARGUMENTS: {arguments}")
-
+        print(f"🔐 SECURITY ROLE: {self.role.value}")
         tool = self.tools.get(function_name)
 
         if not tool:
@@ -103,11 +133,12 @@ class ToolExecutor:
                 arguments=arguments,
                 confirmation_required=confirmation_required,
                 success=False,
-                message="Tool execution was not authorized.",
+                message=(f"Tool execution denied for role " f"{self.role.value}."),
             )
 
             raise PermissionError(
-                f"Tool execution is not authorized: " f"{function_name}"
+                f"Tool execution is not authorized for role "
+                f"{self.role.value}: {function_name}"
             )
 
         self.audit_logger.log(
