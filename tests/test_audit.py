@@ -12,6 +12,11 @@ from security.input_constraints import (
     validate_tool_values,
 )
 
+from security.audit_redaction import (
+    REDACTED,
+    redact_sensitive_data,
+)
+
 
 class TestAuditLogger(unittest.TestCase):
 
@@ -541,6 +546,162 @@ class TestToolInputConstraints(unittest.TestCase):
             validate_tool_values(
                 "web_search",
                 {"query": "A" * 501},
+            )
+
+
+class TestAuditRedaction(unittest.TestCase):
+
+    def test_sensitive_arguments_are_redacted(self):
+        arguments = {
+            "customer_id": 15,
+            "email": "john@example.com",
+            "city": "Nairobi",
+            "fact": "Sensitive personal information",
+            "password": "secret-password",
+            "token": "abc123",
+        }
+
+        result = redact_sensitive_data(arguments)
+
+        self.assertEqual(
+            result["customer_id"],
+            15,
+        )
+
+        self.assertEqual(
+            result["city"],
+            "Nairobi",
+        )
+
+        self.assertEqual(
+            result["email"],
+            REDACTED,
+        )
+
+        self.assertEqual(
+            result["fact"],
+            REDACTED,
+        )
+
+        self.assertEqual(
+            result["password"],
+            REDACTED,
+        )
+
+        self.assertEqual(
+            result["token"],
+            REDACTED,
+        )
+
+    def test_nested_sensitive_arguments_are_redacted(self):
+        arguments = {
+            "customer": {
+                "customer_id": 15,
+                "email": "john@example.com",
+                "city": "Nairobi",
+            },
+            "metadata": [
+                {
+                    "secret": "hidden",
+                }
+            ],
+        }
+
+        result = redact_sensitive_data(arguments)
+
+        self.assertEqual(
+            result["customer"]["customer_id"],
+            15,
+        )
+
+        self.assertEqual(
+            result["customer"]["email"],
+            REDACTED,
+        )
+
+        self.assertEqual(
+            result["customer"]["city"],
+            "Nairobi",
+        )
+
+        self.assertEqual(
+            result["metadata"][0]["secret"],
+            REDACTED,
+        )
+
+    def test_non_sensitive_arguments_are_preserved(self):
+        arguments = {
+            "customer_id": 42,
+            "city": "Nairobi",
+            "name": "John Doe",
+        }
+
+        result = redact_sensitive_data(arguments)
+
+        self.assertEqual(
+            result,
+            arguments,
+        )
+
+    def test_redaction_does_not_modify_original_data(self):
+        arguments = {
+            "email": "john@example.com",
+            "customer_id": 42,
+        }
+
+        result = redact_sensitive_data(arguments)
+
+        self.assertEqual(
+            arguments["email"],
+            "john@example.com",
+        )
+
+        self.assertEqual(
+            result["email"],
+            REDACTED,
+        )
+
+    def test_audit_logger_redacts_sensitive_arguments(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            logger = AuditLogger(Path(tmpdir) / "audit.jsonl")
+
+            logger.log(
+                event="tool_requested",
+                tool="create_customer",
+                permission="write",
+                arguments={
+                    "customer_id": 15,
+                    "email": "john@example.com",
+                    "city": "Nairobi",
+                    "fact": "private information",
+                },
+            )
+
+            record = json.loads(logger.log_path.read_text(encoding="utf-8").strip())
+
+            self.assertEqual(
+                record["arguments"]["customer_id"],
+                15,
+            )
+
+            self.assertEqual(
+                record["arguments"]["city"],
+                "Nairobi",
+            )
+
+            self.assertEqual(
+                record["arguments"]["email"],
+                REDACTED,
+            )
+
+            self.assertEqual(
+                record["arguments"]["fact"],
+                REDACTED,
+            )
+
+            self.assertNotIn(
+                "john@example.com",
+                record["arguments"].values(),
             )
 
 

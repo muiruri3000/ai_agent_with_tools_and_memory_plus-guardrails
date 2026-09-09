@@ -1,6 +1,7 @@
 import json
 from datetime import datetime, timezone
 from pathlib import Path
+from security.audit_redaction import redact_sensitive_data
 
 
 class AuditLogger:
@@ -35,13 +36,11 @@ class AuditLogger:
         """
 
         record = {
-            "timestamp": datetime.now(
-                timezone.utc
-            ).isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "event": event,
             "tool": tool,
             "permission": permission,
-            "arguments": arguments or {},
+            "arguments": redact_sensitive_data(arguments or {}),
             "confirmation_required": confirmation_required,
             "confirmation_granted": confirmation_granted,
             "success": success,
