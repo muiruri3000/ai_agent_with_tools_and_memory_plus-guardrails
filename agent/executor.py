@@ -12,6 +12,7 @@ from security.timeouts import get_tool_timeout
 from security.input_constraints import validate_tool_values
 
 from security.roles import SecurityRole, role_allows
+from security.rate_limiter import RateLimiter
 
 
 class ToolExecutor:
@@ -29,6 +30,7 @@ class ToolExecutor:
         self.tools = {tool.__name__: tool for tool in TOOLS}
         self.audit_logger = AuditLogger()
         self.role = role
+        self.rate_limiter = RateLimiter(role)
 
     def get_tool_level(self, function_name: str):
         """
@@ -139,6 +141,23 @@ class ToolExecutor:
             raise PermissionError(
                 f"Tool execution is not authorized for role "
                 f"{self.role.value}: {function_name}"
+            )
+        if not self.rate_limiter.allow():
+            self.audit_logger.log(
+                event="tool_rate_limited",
+                tool=function_name,
+                permission=level.value,
+                arguments=arguments,
+                confirmation_required=confirmation_required,
+                success=False,
+                message=(
+                    "Tool execution was blocked because " "the rate limit was exceeded."
+                ),
+            )
+
+            raise RuntimeError(
+                "Tool execution rate limit exceeded. "
+                "Please wait before trying again."
             )
 
         self.audit_logger.log(
