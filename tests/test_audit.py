@@ -153,6 +153,54 @@ class TestExecutorAuditLogging(unittest.TestCase):
                 "Simulated failure",
             )
 
+    def test_unknown_tool_is_audited(self):
+        executor = ToolExecutor()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            executor.audit_logger = AuditLogger(Path(tmpdir) / "audit.jsonl")
+
+            with self.assertRaises(ValueError):
+                executor.execute(
+                    "unknown_tool",
+                    {},
+                )
+
+            records = [
+                json.loads(line)
+                for line in (
+                    executor.audit_logger.log_path.read_text(
+                        encoding="utf-8"
+                    ).splitlines()
+                )
+            ]
+
+            self.assertEqual(
+                len(records),
+                1,
+            )
+
+            self.assertEqual(
+                records[0]["event"],
+                "tool_denied",
+            )
+
+            self.assertEqual(
+                records[0]["tool"],
+                "unknown_tool",
+            )
+
+            self.assertEqual(
+                records[0]["permission"],
+                "unknown",
+            )
+
+            self.assertFalse(records[0]["success"])
+
+            self.assertIn(
+                "Unknown tool",
+                records[0]["message"],
+            )
+
 
 class TestToolTimeout(unittest.TestCase):
 

@@ -76,6 +76,16 @@ class ToolExecutor:
         tool = self.tools.get(function_name)
 
         if not tool:
+            self.audit_logger.log(
+                event="tool_denied",
+                tool=function_name,
+                permission="unknown",
+                arguments=arguments,
+                confirmation_required=False,
+                success=False,
+                message=(f"Unknown tool requested: " f"{function_name}"),
+            )
+
             raise ValueError(f"Unknown tool requested: {function_name}")
 
         level = self.get_tool_level(function_name)
