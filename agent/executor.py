@@ -9,6 +9,7 @@ from security.permissions import requires_confirmation
 from security.tool_registry import TOOL_PERMISSIONS
 from audit.logger import AuditLogger
 from security.timeouts import get_tool_timeout
+from security.input_constraints import validate_tool_values
 
 
 class ToolExecutor:
@@ -141,7 +142,27 @@ class ToolExecutor:
             print(f"❌ ARGUMENT VALIDATION FAILED: " f"{function_name}: {exc}")
 
             raise
+        # Semantic value constraints are audited.
+        try:
+            validate_tool_values(
+                function_name,
+                arguments,
+            )
 
+        except ValueError as exc:
+            self.audit_logger.log(
+                event="tool_constraint_failed",
+                tool=function_name,
+                permission=level.value,
+                arguments=arguments,
+                confirmation_required=confirmation_required,
+                success=False,
+                message=str(exc),
+            )
+
+            print(f"❌ VALUE CONSTRAINT FAILED: " f"{function_name}: {exc}")
+
+            raise
         # -------------------------------------------------
         # TOOL TIMEOUT
         # -------------------------------------------------

@@ -8,6 +8,10 @@ from audit.logger import AuditLogger
 from agent.executor import ToolExecutor
 from agent.results import ToolResult
 
+from security.input_constraints import (
+    validate_tool_values,
+)
+
 
 class TestAuditLogger(unittest.TestCase):
 
@@ -440,6 +444,104 @@ class TestToolArgumentValidation(unittest.TestCase):
             )
 
             self.assertFalse(records[1]["success"])
+
+
+class TestToolInputConstraints(unittest.TestCase):
+
+    def test_positive_customer_id_is_accepted(self):
+        validate_tool_values(
+            "get_customer_by_id",
+            {"customer_id": 1},
+        )
+
+    def test_zero_customer_id_is_rejected(self):
+        with self.assertRaises(ValueError):
+            validate_tool_values(
+                "get_customer_by_id",
+                {"customer_id": 0},
+            )
+
+    def test_negative_customer_id_is_rejected(self):
+        with self.assertRaises(ValueError):
+            validate_tool_values(
+                "get_customer_by_id",
+                {"customer_id": -1},
+            )
+
+    def test_empty_name_is_rejected(self):
+        with self.assertRaises(ValueError):
+            validate_tool_values(
+                "create_customer",
+                {
+                    "name": "   ",
+                    "email": "john@example.com",
+                    "city": "Nairobi",
+                },
+            )
+
+    def test_invalid_email_is_rejected(self):
+        with self.assertRaises(ValueError):
+            validate_tool_values(
+                "create_customer",
+                {
+                    "name": "John Doe",
+                    "email": "not-an-email",
+                    "city": "Nairobi",
+                },
+            )
+
+    def test_valid_email_is_accepted(self):
+        validate_tool_values(
+            "create_customer",
+            {
+                "name": "John Doe",
+                "email": "john@example.com",
+                "city": "Nairobi",
+            },
+        )
+
+    def test_empty_city_is_rejected(self):
+        with self.assertRaises(ValueError):
+            validate_tool_values(
+                "create_customer",
+                {
+                    "name": "John Doe",
+                    "email": "john@example.com",
+                    "city": "   ",
+                },
+            )
+
+    def test_empty_fact_is_rejected(self):
+        with self.assertRaises(ValueError):
+            validate_tool_values(
+                "remember",
+                {"fact": "   "},
+            )
+
+    def test_empty_query_is_rejected(self):
+        with self.assertRaises(ValueError):
+            validate_tool_values(
+                "web_search",
+                {"query": "   "},
+            )
+
+    def test_excessively_long_name_is_rejected(self):
+        with self.assertRaises(ValueError):
+            validate_tool_values(
+                "create_customer",
+                {
+                    "name": "A" * 151,
+                    "email": "john@example.com",
+                    "city": "Nairobi",
+                },
+            )
+
+    def test_excessively_long_query_is_rejected(self):
+        with self.assertRaises(ValueError):
+            validate_tool_values(
+                "web_search",
+                {"query": "A" * 501},
+            )
 
 
 if __name__ == "__main__":
