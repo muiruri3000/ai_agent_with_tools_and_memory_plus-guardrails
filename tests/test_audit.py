@@ -165,5 +165,87 @@ class TestExecutorAuditLogging(unittest.TestCase):
             )
 
 
+
+
+class TestToolTimeout(unittest.TestCase):
+
+    def test_tool_timeout_raises_timeout_error(self):
+        executor = ToolExecutor()
+
+        def slow_tool():
+            import time
+            time.sleep(2)
+
+        with self.assertRaises(TimeoutError):
+            executor._run_with_timeout(
+                slow_tool,
+                {},
+                1,
+            )
+
+    def test_tool_timeout_is_audited(self):
+        executor = ToolExecutor()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            executor.audit_logger = AuditLogger(
+                Path(tmpdir) / "audit.jsonl"
+            )
+
+            with patch(
+                "agent.executor.get_tool_timeout",
+                return_value=1,
+            ):
+                with patch.dict(
+                    executor.tools,
+                    {
+                        "get_customers": lambda: (
+                            __import__("time").sleep(2)
+                        )
+                    },
+                ):
+                    with self.assertRaises(TimeoutError):
+                        executor.execute(
+                            "get_customers",
+                            {},
+                        )
+
+            records = [
+                json.loads(line)
+                for line in (
+                    executor.audit_logger.log_path
+                    .read_text(encoding="utf-8")
+                    .splitlines()
+                )
+            ]
+
+            self.assertEqual(
+                len(records),
+                2,
+            )
+
+            self.assertEqual(
+                records[0]["event"],
+                "tool_requested",
+            )
+
+            self.assertEqual(
+                records[1]["event"],
+                "tool_timeout",
+            )
+
+            self.assertEqual(
+                records[1]["tool"],
+                "get_customers",
+            )
+
+            self.assertFalse(
+                records[1]["success"]
+            )
+
+            self.assertIn(
+                "timed out",
+                records[1]["message"],
+            )
+
 if __name__ == "__main__":
     unittest.main()

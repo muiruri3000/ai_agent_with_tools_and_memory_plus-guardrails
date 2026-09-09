@@ -5,6 +5,8 @@ from agent.results import ToolResult
 from security.permissions import requires_confirmation
 from security.tool_registry import TOOL_PERMISSIONS
 from audit.logger import AuditLogger
+from security.timeouts import get_tool_timeout
+import signal
 
 
 class ToolExecutor:
@@ -102,8 +104,21 @@ class ToolExecutor:
             confirmation_required=confirmation_required,
         )
 
+        timeout_seconds = get_tool_timeout(
+            function_name
+        )
+
+        print(
+            f"⏱️ TIMEOUT: "
+            f"{timeout_seconds} seconds"
+        )
+
         try:
-            result = tool(**arguments)
+            result = self._run_with_timeout(
+                tool,
+                arguments,
+                timeout_seconds,
+            )
 
             success = result.success if isinstance(result, ToolResult) else True
 
@@ -123,6 +138,24 @@ class ToolExecutor:
 
             return result
 
+        except TimeoutError as exc:
+            self.audit_logger.log(
+                event="tool_timeout",
+                tool=function_name,
+                permission=level.value,
+                arguments=arguments,
+                confirmation_required=confirmation_required,
+                success=False,
+                message=str(exc),
+            )
+
+            print(
+                f"⏱️ TOOL TIMEOUT: "
+                f"{function_name}: {exc}"
+            )
+
+            raise
+
         except Exception as exc:
             self.audit_logger.log(
                 event="tool_failed",
@@ -137,6 +170,37 @@ class ToolExecutor:
             print(f"❌ TOOL ERROR: {function_name}: {exc}")
 
             raise
+
+    def _run_with_timeout(self, tool, arguments, timeout_seconds):
+        """
+        Execute a tool with a hard execution timeout.
+
+        SIGALRM is used so a timed-out tool does not continue
+        executing in the background.
+        """
+
+        def handle_timeout(signum, frame):
+            raise TimeoutError(
+                f"Tool execution timed out after "
+                f"{timeout_seconds} seconds."
+            )
+
+        previous_handler = signal.signal(
+            signal.SIGALRM,
+            handle_timeout,
+        )
+
+        signal.alarm(timeout_seconds)
+
+        try:
+            return tool(**arguments)
+
+        finally:
+            signal.alarm(0)
+            signal.signal(
+                signal.SIGALRM,
+                previous_handler,
+            )
 
     def serialize_result(self, result) -> dict:
         """
