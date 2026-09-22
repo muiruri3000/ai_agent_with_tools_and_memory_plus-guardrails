@@ -3,6 +3,8 @@ import inspect
 import signal
 from typing import get_type_hints
 
+import time
+
 from agent.registry import TOOLS
 from agent.results import ToolResult
 from security.permissions import requires_confirmation
@@ -13,6 +15,8 @@ from security.input_constraints import validate_tool_values
 
 from security.roles import SecurityRole, role_allows
 from security.rate_limiter import RateLimiter
+
+from monitoring.metrics import Metrics
 
 
 class ToolExecutor:
@@ -31,6 +35,7 @@ class ToolExecutor:
         self.audit_logger = AuditLogger()
         self.role = role
         self.rate_limiter = RateLimiter(role)
+        self.metrics = Metrics()
 
     def get_tool_level(self, function_name: str):
         """
@@ -78,7 +83,7 @@ class ToolExecutor:
         to execute a tool.
         """
 
-        if not self.role_authorizes(function_name):
+        if not self.authorize(function_name):
             return False
 
         return self.role_allows_tool(function_name)
@@ -143,6 +148,7 @@ class ToolExecutor:
                 f"{self.role.value}: {function_name}"
             )
         if not self.rate_limiter.allow():
+            self.metrics.increment("rate_limit_exceeded")
             self.audit_logger.log(
                 event="tool_rate_limited",
                 tool=function_name,
@@ -219,7 +225,9 @@ class ToolExecutor:
 
         timeout_seconds = get_tool_timeout(function_name)
 
-        print(f"⏱️ TIMEOUT: " f"{timeout_seconds} seconds")
+        print(f"⏱️ TIMEOUT: {timeout_seconds} seconds")
+
+        start_time = time.monotonic()
 
         try:
             result = self._run_with_timeout(
@@ -231,6 +239,14 @@ class ToolExecutor:
             success = result.success if isinstance(result, ToolResult) else True
 
             message = result.message if isinstance(result, ToolResult) else str(result)
+
+            duration = time.monotonic() - start_time
+
+            self.metrics.record_tool_execution(
+                function_name,
+                success=success,
+                duration_seconds=duration,
+            )
 
             self.audit_logger.log(
                 event="tool_completed",
@@ -247,6 +263,15 @@ class ToolExecutor:
             return result
 
         except TimeoutError as exc:
+
+            duration = time.monotonic() - start_time
+
+            self.metrics.record_tool_execution(
+                function_name,
+                success=False,
+                duration_seconds=duration,
+            )
+
             self.audit_logger.log(
                 event="tool_timeout",
                 tool=function_name,
@@ -257,11 +282,20 @@ class ToolExecutor:
                 message=str(exc),
             )
 
-            print(f"⏱️ TOOL TIMEOUT: " f"{function_name}: {exc}")
+            print(f"⏱️ TOOL TIMEOUT: {function_name}: {exc}")
 
             raise
 
         except Exception as exc:
+
+            duration = time.monotonic() - start_time
+
+            self.metrics.record_tool_execution(
+                function_name,
+                success=False,
+                duration_seconds=duration,
+            )
+
             self.audit_logger.log(
                 event="tool_failed",
                 tool=function_name,
@@ -272,7 +306,7 @@ class ToolExecutor:
                 message=str(exc),
             )
 
-            print(f"❌ TOOL ERROR: " f"{function_name}: {exc}")
+            print(f"❌ TOOL ERROR: {function_name}: {exc}")
 
             raise
 

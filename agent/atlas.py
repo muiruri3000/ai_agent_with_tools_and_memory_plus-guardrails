@@ -10,6 +10,9 @@ from agent.results import ToolResult
 from google import genai
 from google.genai import types
 import re
+import logging
+
+from logging_config import configure_logging
 
 from config.settings import (
     GEMINI_API_KEY,
@@ -36,9 +39,15 @@ class Atlas:
         self.context = {
             "customer": None,
         }
+        self.logger = configure_logging()
+        self.logger.info(
+            "Atlas initialized",
+            extra={"event": "atlas_initialized"},
+        )
         self.client = genai.Client(api_key=GEMINI_API_KEY)
 
         self.executor = ToolExecutor()
+        self.metrics = self.executor.metrics
 
         self.chat = self.client.chats.create(
             model=MODEL_NAME,
@@ -632,59 +641,104 @@ class Atlas:
         limitation to the user.
         """
 
-        response = self.chat.send_message(message)
+        try:
+            response = self.chat.send_message(message)
 
-        tool_iterations = 0
+            tool_iterations = 0
 
-        while response.function_calls:
-            tool_iterations += 1
+            while response.function_calls:
+                tool_iterations += 1
 
-            if tool_iterations > self.MAX_TOOL_ITERATIONS:
-                return (
-                    "I stopped the tool execution because the maximum "
-                    "number of tool iterations was reached."
+                if tool_iterations > self.MAX_TOOL_ITERATIONS:
+
+                    self.metrics.increment("max_tool_iterations_reached")
+
+                    self.logger.warning(
+                        "Maximum tool iterations reached",
+                        extra={
+                            "event": "max_tool_iterations_reached",
+                        },
+                    )
+
+                    return (
+                        "I stopped the tool execution because the maximum "
+                        "number of tool iterations was reached."
+                    )
+
+                self.metrics.increment("agent_iterations")
+
+                print(f"\n🧠 AGENT ITERATION: " f"{tool_iterations}")
+
+                self.logger.info(
+                    f"Agent iteration {tool_iterations}",
+                    extra={
+                        "event": "agent_iteration",
+                    },
                 )
 
-            print(f"\n🧠 AGENT ITERATION: {tool_iterations}")
+                function_responses = []
 
-            function_responses = []
+                for function_call in response.function_calls:
 
-            for function_call in response.function_calls:
+                    try:
+                        result = self.executor.execute(
+                            function_call.name,
+                            dict(function_call.args),
+                        )
 
-                try:
-                    result = self.executor.execute(
-                        function_call.name,
-                        dict(function_call.args),
+                    except Exception as exc:
+
+                        print(f"❌ TOOL ERROR: " f"{function_call.name}: {exc}")
+
+                        result = ToolResult(
+                            success=False,
+                            action=function_call.name,
+                            message=(f"Tool execution failed: {exc}"),
+                            data=None,
+                        )
+
+                        self.logger.error(
+                            f"Tool execution failed: " f"{function_call.name}",
+                            extra={
+                                "event": "tool_execution_failed",
+                                "tool": function_call.name,
+                                "error": str(exc),
+                            },
+                        )
+
+                    serialized_result = self.executor.serialize_result(result)
+
+                    function_responses.append(
+                        types.Part.from_function_response(
+                            name=function_call.name,
+                            response=serialized_result,
+                        )
                     )
 
-                except Exception as exc:
-                    print(
-                        f"❌ TOOL ERROR: {function_call.name}: {exc}"
-                    )
+                response = self.chat.send_message(function_responses)
 
-                    result = ToolResult(
-                        success=False,
-                        action=function_call.name,
-                        message=(
-                            f"Tool execution failed: {exc}"
-                        ),
-                        data=None,
-                    )
+            self.metrics.increment("agent_responses")
 
-                serialized_result = self.executor.serialize_result(
-                    result
-                )
+            self.logger.info(
+                "Agent response completed",
+                extra={
+                    "event": "agent_response_completed",
+                },
+            )
 
-                function_responses.append(
-                    types.Part.from_function_response(
-                        name=function_call.name,
-                        response=serialized_result,
-                    )
-                )
+            return response.text
 
-            response = self.chat.send_message(function_responses)
+        except Exception:
+            self.metrics.increment("agent_failures")
 
-        return response.text
+            self.logger.exception(
+                "Agent request failed",
+                extra={
+                    "event": "agent_request_failed",
+                },
+            )
+
+            raise
 
     def ask(self, message: str) -> str:
         """
@@ -697,7 +751,7 @@ class Atlas:
         # ---------------------------------------------
         # CONTEXT-AWARE CUSTOMER UPDATE
         # ---------------------------------------------
-
+        self.metrics.increment("agent_requests")
         context_update_response = self.handle_context_update(message)
 
         if context_update_response:

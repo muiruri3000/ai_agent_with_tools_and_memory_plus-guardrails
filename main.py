@@ -10,7 +10,10 @@ def main():
 
     while True:
 
-        user_input = input("You: ")
+        user_input = input("You: ").strip()
+
+        if not user_input:
+            continue
 
         if user_input.lower() == "exit":
             print("Goodbye!")
