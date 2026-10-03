@@ -1154,6 +1154,11 @@ class TestAtlasAgenticLoop(unittest.TestCase):
             }
         )
 
+        atlas.current_task = AgentTask(
+            goal="Compare Lambda and Step Functions."
+        )
+        atlas.current_task.start()
+
         response = atlas.handle_gemini(
             "Compare Lambda and Step Functions."
         )
@@ -1161,6 +1166,54 @@ class TestAtlasAgenticLoop(unittest.TestCase):
         self.assertEqual(
             response,
             "Comparison complete.",
+        )
+
+        self.assertEqual(
+            atlas.current_task.goal,
+            "Compare Lambda and Step Functions.",
+        )
+        self.assertEqual(
+            atlas.current_task.iteration,
+            2,
+        )
+        self.assertEqual(
+            atlas.current_task.status.value,
+            "completed",
+        )
+        self.assertEqual(
+            atlas.current_task.result,
+            "Comparison complete.",
+        )
+
+        self.assertEqual(
+            atlas.current_task.tool_calls,
+            [
+                {
+                    "function": "web_search",
+                    "arguments": {
+                        "query": "AWS Lambda",
+                    },
+                },
+                {
+                    "function": "web_search",
+                    "arguments": {
+                        "query": "AWS Step Functions",
+                    },
+                },
+            ],
+        )
+
+        self.assertEqual(
+            len(atlas.current_task.observations),
+            2,
+        )
+        self.assertEqual(
+            atlas.current_task.observations[0].message,
+            "Lambda result",
+        )
+        self.assertEqual(
+            atlas.current_task.observations[1].message,
+            "Step Functions result",
         )
 
         self.assertEqual(
