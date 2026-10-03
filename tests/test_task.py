@@ -55,6 +55,82 @@ class TestAgentTask(unittest.TestCase):
             ],
         )
 
+    def test_tool_call_is_detected_as_duplicate(self):
+        task = AgentTask(goal="Find David")
+
+        task.record_tool_call(
+            "find_customer",
+            {"name": "David"},
+        )
+
+        self.assertTrue(
+            task.is_duplicate_tool_call(
+                "find_customer",
+                {"name": "David"},
+            )
+        )
+
+    def test_different_tool_call_is_not_duplicate(self):
+        task = AgentTask(goal="Find David")
+
+        task.record_tool_call(
+            "find_customer",
+            {"name": "David"},
+        )
+
+        self.assertFalse(
+            task.is_duplicate_tool_call(
+                "find_customer",
+                {"name": "Mary"},
+            )
+        )
+
+    def test_different_function_is_not_duplicate(self):
+        task = AgentTask(goal="Find David")
+
+        task.record_tool_call(
+            "find_customer",
+            {"name": "David"},
+        )
+
+        self.assertFalse(
+            task.is_duplicate_tool_call(
+                "get_customers",
+                {"name": "David"},
+            )
+        )
+
+    def test_argument_order_does_not_affect_duplicate_detection(self):
+        task = AgentTask(goal="Find David")
+
+        task.record_tool_call(
+            "search",
+            {
+                "query": "AWS",
+                "limit": 5,
+            },
+        )
+
+        self.assertTrue(
+            task.is_duplicate_tool_call(
+                "search",
+                {
+                    "limit": 5,
+                    "query": "AWS",
+                },
+            )
+        )
+
+    def test_unrecorded_tool_call_is_not_duplicate(self):
+        task = AgentTask(goal="Find David")
+
+        self.assertFalse(
+            task.is_duplicate_tool_call(
+                "find_customer",
+                {"name": "David"},
+            )
+        )
+
     def test_observation_is_recorded(self):
         task = AgentTask(goal="Find David")
 

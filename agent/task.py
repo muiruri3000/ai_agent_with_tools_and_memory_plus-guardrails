@@ -68,6 +68,25 @@ class AgentTask:
 
         self.observations.append(result)
 
+    def is_duplicate_tool_call(
+        self,
+        function_name: str,
+        arguments: dict[str, Any],
+    ) -> bool:
+        """
+        Return True when the same tool call has already been recorded.
+
+        Argument ordering does not affect duplicate detection.
+        """
+
+        normalized_arguments = dict(arguments)
+
+        return any(
+            call["function"] == function_name
+            and dict(call["arguments"]) == normalized_arguments
+            for call in self.tool_calls
+        )
+
     def is_complete(self) -> bool:
         """Return True when the task completed successfully."""
 
