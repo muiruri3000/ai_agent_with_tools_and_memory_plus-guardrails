@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 from agent.atlas import Atlas
 from agent.results import ToolResult
+from agent.task import AgentTask
 
 
 class TestAtlasCustomerLookup(unittest.TestCase):
@@ -1373,6 +1374,180 @@ class TestAtlasAgentContext(unittest.TestCase):
         self.assertNotIn(
             "CURRENT ATLAS CUSTOMER CONTEXT",
             sent_message,
+        )
+
+
+class TestAtlasTaskState(unittest.TestCase):
+
+    @patch("agent.atlas.genai.Client")
+    def test_ask_creates_and_completes_task(
+        self,
+        mock_client,
+    ):
+        atlas = Atlas()
+
+        final_response = type(
+            "Response",
+            (),
+            {
+                "function_calls": [],
+                "text": "Here is the answer.",
+            },
+        )()
+
+        atlas.chat.send_message.return_value = final_response
+
+        response = atlas.ask("What is AWS STS?")
+
+        self.assertEqual(response, "Here is the answer.")
+        self.assertIsNotNone(atlas.current_task)
+        self.assertEqual(atlas.current_task.goal, "What is AWS STS?")
+        self.assertEqual(
+            atlas.current_task.status.value,
+            "completed",
+        )
+        self.assertEqual(
+            atlas.current_task.result,
+            "Here is the answer.",
+        )
+
+    @patch("agent.atlas.genai.Client")
+    def test_deterministic_request_completes_task(
+        self,
+        mock_client,
+    ):
+        atlas = Atlas()
+
+        atlas.handle_customer_lookup = unittest.mock.Mock(
+            return_value="Customer found."
+        )
+
+        response = atlas.ask("Find John Kamau")
+
+        self.assertEqual(response, "Customer found.")
+        self.assertIsNotNone(atlas.current_task)
+        self.assertEqual(
+            atlas.current_task.goal,
+            "Find John Kamau",
+        )
+        self.assertEqual(
+            atlas.current_task.status.value,
+            "completed",
+        )
+        self.assertEqual(
+            atlas.current_task.result,
+            "Customer found.",
+        )
+
+    @patch("agent.atlas.genai.Client")
+    def test_gemini_tool_loop_tracks_task_iterations(
+        self,
+        mock_client,
+    ):
+        atlas = Atlas()
+
+        tool_call = type(
+            "FunctionCall",
+            (),
+            {
+                "name": "web_search",
+                "args": {
+                    "query": "AWS STS",
+                },
+            },
+        )()
+
+        first_response = type(
+            "Response",
+            (),
+            {
+                "function_calls": [tool_call],
+                "text": None,
+            },
+        )()
+
+        final_response = type(
+            "Response",
+            (),
+            {
+                "function_calls": [],
+                "text": "AWS STS provides temporary credentials.",
+            },
+        )()
+
+        atlas.chat.send_message.side_effect = [
+            first_response,
+            final_response,
+        ]
+
+        atlas.executor.execute = unittest.mock.Mock(
+            return_value=ToolResult(
+                success=True,
+                action="web_search",
+                message="Search completed.",
+                data=[],
+            )
+        )
+
+        atlas.executor.serialize_result = unittest.mock.Mock(
+            side_effect=lambda result: {
+                "success": result.success,
+                "action": result.action,
+                "message": result.message,
+                "data": result.data,
+            }
+        )
+
+        atlas.current_task = AgentTask(
+            goal="Explain AWS STS"
+        )
+        atlas.current_task.start()
+
+        response = atlas.handle_gemini("Explain AWS STS")
+
+        self.assertEqual(
+            response,
+            "AWS STS provides temporary credentials.",
+        )
+        self.assertEqual(
+            atlas.current_task.iteration,
+            1,
+        )
+        self.assertEqual(
+            atlas.current_task.status.value,
+            "completed",
+        )
+        self.assertEqual(
+            atlas.current_task.result,
+            "AWS STS provides temporary credentials.",
+        )
+
+    @patch("agent.atlas.genai.Client")
+    def test_failed_gemini_request_marks_task_failed(
+        self,
+        mock_client,
+    ):
+        atlas = Atlas()
+
+        atlas.current_task = AgentTask(
+            goal="Explain AWS STS"
+        )
+        atlas.current_task.start()
+
+        atlas.chat.send_message.side_effect = RuntimeError(
+            "Gemini unavailable."
+        )
+
+        with self.assertRaises(RuntimeError):
+            atlas.handle_gemini("Explain AWS STS")
+
+        self.assertEqual(
+            atlas.current_task.status.value,
+            "failed",
+        )
+        self.assertEqual(
+            atlas.current_task.error,
+            "Gemini unavailable.",
         )
 
 

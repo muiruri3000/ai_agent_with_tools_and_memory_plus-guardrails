@@ -1,5 +1,6 @@
 from agent.executor import ToolExecutor
 from agent.results import ToolResult
+from agent.task import AgentTask
 from google import genai
 from google.genai import types
 import re
@@ -32,6 +33,7 @@ class Atlas:
         self.context = {
             "customer": None,
         }
+        self.current_task: AgentTask | None = None
         self.logger = configure_logging()
         self.logger.info(
             "Atlas initialized",
@@ -690,6 +692,9 @@ class Atlas:
             while response.function_calls:
                 tool_iterations += 1
 
+                if self.current_task is not None:
+                    self.current_task.next_iteration()
+
                 if tool_iterations > self.MAX_TOOL_ITERATIONS:
 
                     self.metrics.increment("max_tool_iterations_reached")
@@ -767,10 +772,16 @@ class Atlas:
                 },
             )
 
+            if self.current_task is not None:
+                self.current_task.complete(response.text)
+
             return response.text
 
-        except Exception:
+        except Exception as exc:
             self.metrics.increment("agent_failures")
+
+            if self.current_task is not None:
+                self.current_task.fail(str(exc))
 
             self.logger.exception(
                 "Agent request failed",
@@ -814,52 +825,69 @@ class Atlas:
         """
         Main Atlas request coordinator.
 
-        This method determines which part of the
-        system should handle the user's request.
+        Each request is represented by an AgentTask so Atlas can
+        track the goal and execution lifecycle independently from
+        Gemini's internal conversation state.
         """
 
-        # ---------------------------------------------
-        # CONTEXT-AWARE CUSTOMER UPDATE
-        # ---------------------------------------------
         self.metrics.increment("agent_requests")
-        context_update_response = self.handle_context_update(message)
 
-        if context_update_response:
-            return context_update_response
+        self.current_task = AgentTask(goal=message)
+        self.current_task.start()
 
-        # ---------------------------------------------
-        # CONVERSATIONAL CONTEXT
-        # ---------------------------------------------
+        try:
+            # ---------------------------------------------
+            # CONTEXT-AWARE CUSTOMER UPDATE
+            # ---------------------------------------------
+            context_update_response = self.handle_context_update(message)
 
-        context_response = self.handle_customer_context(message)
+            if context_update_response:
+                self.current_task.complete(context_update_response)
+                return context_update_response
 
-        if context_response:
-            return context_response
+            # ---------------------------------------------
+            # CONVERSATIONAL CONTEXT
+            # ---------------------------------------------
+            context_response = self.handle_customer_context(message)
 
-        # ---------------------------------------------
-        # DETERMINE ROUTE
-        # ---------------------------------------------
+            if context_response:
+                self.current_task.complete(context_response)
+                return context_response
 
-        route = route_request(message)
+            # ---------------------------------------------
+            # DETERMINE ROUTE
+            # ---------------------------------------------
+            route = route_request(message)
 
-        # ---------------------------------------------
-        # CUSTOMER OPERATIONS
-        # ---------------------------------------------
+            # ---------------------------------------------
+            # CUSTOMER OPERATIONS
+            # ---------------------------------------------
+            if route == "find_customer":
+                response = self.handle_customer_lookup(message)
+                self.current_task.complete(response)
+                return response
 
-        if route == "find_customer":
-            return self.handle_customer_lookup(message)
+            if route == "update_customer":
+                response = self.handle_customer_update(message)
+                self.current_task.complete(response)
+                return response
 
-        if route == "update_customer":
-            return self.handle_customer_update(message)
+            if route == "delete_customer":
+                response = self.handle_customer_delete(message)
+                self.current_task.complete(response)
+                return response
 
-        if route == "delete_customer":
-            return self.handle_customer_delete(message)
+            if route == "get_customers":
+                response = self.handle_customer_list()
+                self.current_task.complete(response)
+                return response
 
-        if route == "get_customers":
-            return self.handle_customer_list()
+            # ---------------------------------------------
+            # EVERYTHING ELSE → GEMINI
+            # ---------------------------------------------
+            return self.handle_gemini(message)
 
-        # ---------------------------------------------
-        # EVERYTHING ELSE → GEMINI
-        # ---------------------------------------------
-
-        return self.handle_gemini(message)
+        except Exception as exc:
+            if self.current_task is not None:
+                self.current_task.fail(str(exc))
+            raise
