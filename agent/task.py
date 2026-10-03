@@ -87,6 +87,32 @@ class AgentTask:
             for call in self.tool_calls
         )
 
+    def has_consecutive_tool_call(
+        self,
+        function_name: str,
+        arguments: dict[str, Any],
+        repetitions: int = 3,
+    ) -> bool:
+        """
+        Return True when the same tool call occurred consecutively
+        at least the requested number of times.
+        """
+
+        if repetitions <= 0:
+            raise ValueError("repetitions must be greater than zero")
+
+        if len(self.tool_calls) < repetitions:
+            return False
+
+        normalized_arguments = dict(arguments)
+        recent_calls = self.tool_calls[-repetitions:]
+
+        return all(
+            call["function"] == function_name
+            and dict(call["arguments"]) == normalized_arguments
+            for call in recent_calls
+        )
+
     def is_complete(self) -> bool:
         """Return True when the task completed successfully."""
 

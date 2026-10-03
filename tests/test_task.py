@@ -131,6 +131,88 @@ class TestAgentTask(unittest.TestCase):
             )
         )
 
+    def test_three_consecutive_identical_tool_calls_detect_stuck_loop(self):
+        task = AgentTask(goal="Find David")
+
+        for _ in range(3):
+            task.record_tool_call(
+                "find_customer",
+                {"name": "David"},
+            )
+
+        self.assertTrue(
+            task.has_consecutive_tool_call(
+                "find_customer",
+                {"name": "David"},
+            )
+        )
+
+    def test_two_repetitions_do_not_trigger_default_threshold(self):
+        task = AgentTask(goal="Find David")
+
+        for _ in range(2):
+            task.record_tool_call(
+                "find_customer",
+                {"name": "David"},
+            )
+
+        self.assertFalse(
+            task.has_consecutive_tool_call(
+                "find_customer",
+                {"name": "David"},
+            )
+        )
+
+    def test_intervening_tool_call_breaks_consecutive_sequence(self):
+        task = AgentTask(goal="Find David")
+
+        task.record_tool_call(
+            "find_customer",
+            {"name": "David"},
+        )
+        task.record_tool_call(
+            "get_customers",
+            {},
+        )
+        task.record_tool_call(
+            "find_customer",
+            {"name": "David"},
+        )
+
+        self.assertFalse(
+            task.has_consecutive_tool_call(
+                "find_customer",
+                {"name": "David"},
+            )
+        )
+
+    def test_custom_repetition_threshold_is_supported(self):
+        task = AgentTask(goal="Find David")
+
+        for _ in range(2):
+            task.record_tool_call(
+                "find_customer",
+                {"name": "David"},
+            )
+
+        self.assertTrue(
+            task.has_consecutive_tool_call(
+                "find_customer",
+                {"name": "David"},
+                repetitions=2,
+            )
+        )
+
+    def test_invalid_repetition_threshold_is_rejected(self):
+        task = AgentTask(goal="Find David")
+
+        with self.assertRaises(ValueError):
+            task.has_consecutive_tool_call(
+                "find_customer",
+                {"name": "David"},
+                repetitions=0,
+            )
+
     def test_observation_is_recorded(self):
         task = AgentTask(goal="Find David")
 
