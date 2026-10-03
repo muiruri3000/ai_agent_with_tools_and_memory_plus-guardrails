@@ -2,6 +2,7 @@ from google.genai import types
 
 from agent.tools import (
     get_customers,
+    find_customer,
     web_search,
     remember,
     recall,
@@ -18,6 +19,7 @@ TOOLS = [
     remember,
     recall,
     forget,
+    find_customer,
     create_customer,
     update_customer,
     delete_customer,
@@ -32,15 +34,53 @@ GEMINI_TOOLS = types.Tool(
     function_declarations=[
         types.FunctionDeclaration(
             name="get_customers",
-            description="Retrieve the complete list of customers from the database.",
+            description=(
+    "Retrieve the complete list of all customers from the database. "
+    "Use ONLY when the user explicitly asks for all customers, "
+    "a list of customers, the complete customer list, or every customer. "
+    "Do NOT use this tool to find a specific customer; use find_customer instead."
+),
             parameters_json_schema={
                 "type": "object",
                 "properties": {},
             },
         ),
+
+
+                types.FunctionDeclaration(
+            name="find_customer",
+            description=(
+    "Find specific customers in the database by identifying attributes "
+    "such as name, email, or city. Use this for requests to find, identify, "
+    "look up, or get details about a specific customer. "
+    "Do NOT use get_customers for a specific customer."
+),
+            parameters_json_schema={
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Customer's name to search for.",
+                    },
+                    "email": {
+                        "type": "string",
+                        "description": "Customer's email to search for.",
+                    },
+                    "city": {
+                        "type": "string",
+                        "description": "Customer's city to search for.",
+                    },
+                },
+            },
+        ),
+
         types.FunctionDeclaration(
             name="web_search",
-            description="Search the Internet for current or external information.",
+            description=(
+    "Search the Internet for current, recent, or external information. "
+    "Use this when the answer cannot reliably come from Atlas's internal "
+    "database or persistent memory."
+),
             parameters_json_schema={
                 "type": "object",
                 "properties": {
@@ -54,7 +94,11 @@ GEMINI_TOOLS = types.Tool(
         ),
         types.FunctionDeclaration(
             name="remember",
-            description="Store a fact in Atlas's persistent memory.",
+            description=(
+    "Store a fact in Atlas's persistent memory. "
+    "Use ONLY when the user explicitly asks Atlas to remember "
+    "or save a fact."
+),
             parameters_json_schema={
                 "type": "object",
                 "properties": {
@@ -68,7 +112,12 @@ GEMINI_TOOLS = types.Tool(
         ),
         types.FunctionDeclaration(
             name="recall",
-            description="Retrieve facts stored in Atlas's persistent memory.",
+            description=(
+    "Retrieve facts previously stored in Atlas's persistent memory. "
+    "Use when the user's request depends on something that may have "
+    "been remembered previously. Do NOT use this as a substitute "
+    "for current database or Internet information."
+),
             parameters_json_schema={
                 "type": "object",
                 "properties": {},
@@ -76,7 +125,11 @@ GEMINI_TOOLS = types.Tool(
         ),
         types.FunctionDeclaration(
             name="forget",
-            description="Remove a fact from Atlas's persistent memory.",
+            description=(
+    "Remove a fact from Atlas's persistent memory. "
+    "Use ONLY when the user explicitly asks Atlas to forget "
+    "or remove a stored fact."
+),
             parameters_json_schema={
                 "type": "object",
                 "properties": {

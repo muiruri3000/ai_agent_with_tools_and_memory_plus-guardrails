@@ -1,10 +1,3 @@
-from agent.tools import (
-    get_customers,
-    find_customer,
-    get_customer_by_id,
-    update_customer,
-    delete_customer,
-)
 from agent.executor import ToolExecutor
 from agent.results import ToolResult
 from google import genai
@@ -58,6 +51,20 @@ class Atlas:
                     disable=True
                 ),
             ),
+        )
+
+    def execute_tool(self, function_name: str, arguments: dict):
+        """
+        Execute an Atlas tool through the central ToolExecutor.
+
+        All deterministic and Gemini-driven tool execution passes
+        through this boundary so authorization, rate limiting,
+        validation, timeouts, auditing, and metrics are consistent.
+        """
+
+        return self.executor.execute(
+            function_name,
+            arguments,
         )
 
     def handle_customer_context(self, message: str) -> str | None:
@@ -240,11 +247,14 @@ class Atlas:
         # REQUEST CONFIRMATION + UPDATE
         # ---------------------------------------------
 
-        result = update_customer(
-            customer_id=customer["id"],
-            name=name,
-            email=email,
-            city=city,
+        result = self.execute_tool(
+            "update_customer",
+            {
+                "customer_id": customer["id"],
+                "name": name,
+                "email": email,
+                "city": city,
+            },
         )
 
         # ---------------------------------------------
@@ -291,10 +301,13 @@ class Atlas:
                 "you are referring to."
             )
 
-        result = find_customer(
-            name=query["name"],
-            email=query["email"],
-            city=query["city"],
+        result = self.execute_tool(
+            "find_customer",
+            {
+                "name": query["name"],
+                "email": query["email"],
+                "city": query["city"],
+            },
         )
 
         if not result.success:
@@ -383,7 +396,12 @@ class Atlas:
 
         if update["customer_id"] is not None:
 
-            result = get_customer_by_id(update["customer_id"])
+            result = self.execute_tool(
+                "get_customer_by_id",
+                {
+                    "customer_id": update["customer_id"],
+                },
+            )
 
             if not result.success:
                 return result.message
@@ -396,7 +414,14 @@ class Atlas:
 
         else:
 
-            result = find_customer(name=update["name"])
+            result = self.execute_tool(
+                "find_customer",
+                {
+                    "name": update["name"],
+                    "email": None,
+                    "city": None,
+                },
+            )
 
             if not result.success:
                 return result.message
@@ -492,11 +517,14 @@ class Atlas:
         # PERFORM UPDATE
         # ---------------------------------------------
 
-        result = update_customer(
-            customer_id=customer["id"],
-            name=name,
-            email=email,
-            city=city,
+        result = self.execute_tool(
+            "update_customer",
+            {
+                "customer_id": customer["id"],
+                "name": name,
+                "email": email,
+                "city": city,
+            },
         )
 
         # ---------------------------------------------
@@ -530,10 +558,13 @@ class Atlas:
                 "you are referring to."
             )
 
-        result = find_customer(
-            name=query["name"],
-            email=query["email"],
-            city=query["city"],
+        result = self.execute_tool(
+            "find_customer",
+            {
+                "name": query["name"],
+                "email": query["email"],
+                "city": query["city"],
+            },
         )
 
         if not result.success:
@@ -582,7 +613,12 @@ class Atlas:
 
         customer = results[0]
 
-        result = delete_customer(customer_id=customer["id"])
+        result = self.execute_tool(
+            "delete_customer",
+            {
+                "customer_id": customer["id"],
+            },
+        )
 
         # ---------------------------------------------
         # HANDLE DELETE RESULT
@@ -609,7 +645,10 @@ class Atlas:
         Handle deterministic customer list requests.
         """
 
-        result = get_customers()
+        result = self.execute_tool(
+            "get_customers",
+            {},
+        )
 
         if not result.success:
             return result.message
@@ -642,7 +681,9 @@ class Atlas:
         """
 
         try:
-            response = self.chat.send_message(message)
+            response = self.chat.send_message(
+                self.build_agent_message(message)
+            )
 
             tool_iterations = 0
 
@@ -739,6 +780,35 @@ class Atlas:
             )
 
             raise
+    def build_agent_message(self, message: str) -> str:
+        """
+        Build the message sent to Gemini.
+
+        Atlas application context is explicitly provided to Gemini
+        as supporting context. Tool results remain authoritative.
+        """
+
+        customer = self.context.get("customer")
+
+        if not customer:
+            return message
+
+        customer_context = (
+            "\n\n"
+            "CURRENT ATLAS CUSTOMER CONTEXT\n"
+            "The following customer was previously verified by Atlas. "
+            "Use this context when the user's request refers to "
+            "the current customer. Do not treat it as authoritative "
+            "for information that may have changed; use database "
+            "tools when current data is required.\n"
+            f"- Customer ID: {customer['id']}\n"
+            f"- Name: {customer['name']}\n"
+            f"- Email: {customer['email']}\n"
+            f"- City: {customer['city']}\n"
+            "END CURRENT ATLAS CUSTOMER CONTEXT\n"
+        )
+
+        return f"{message}{customer_context}"
 
     def ask(self, message: str) -> str:
         """

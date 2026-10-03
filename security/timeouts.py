@@ -1,18 +1,24 @@
 from security.tool_registry import TOOL_PERMISSIONS
 from security.permissions import PermissionLevel
 
-
-# Maximum time a tool is allowed to execute.
-DEFAULT_TOOL_TIMEOUT_SECONDS = 30
+from config.settings import (
+    DEFAULT_TOOL_TIMEOUT_SECONDS,
+    TOOL_TIMEOUT_DESTRUCTIVE_SECONDS,
+    TOOL_TIMEOUT_EXTERNAL_READ_SECONDS,
+    TOOL_TIMEOUT_MEMORY_READ_SECONDS,
+    TOOL_TIMEOUT_MEMORY_WRITE_SECONDS,
+    TOOL_TIMEOUT_READ_SECONDS,
+    TOOL_TIMEOUT_WRITE_SECONDS,
+)
 
 
 TOOL_TIMEOUTS = {
-    PermissionLevel.READ: 10,
-    PermissionLevel.EXTERNAL_READ: 30,
-    PermissionLevel.MEMORY_READ: 10,
-    PermissionLevel.MEMORY_WRITE: 10,
-    PermissionLevel.WRITE: 10,
-    PermissionLevel.DESTRUCTIVE: 10,
+    PermissionLevel.READ: TOOL_TIMEOUT_READ_SECONDS,
+    PermissionLevel.EXTERNAL_READ: TOOL_TIMEOUT_EXTERNAL_READ_SECONDS,
+    PermissionLevel.MEMORY_READ: TOOL_TIMEOUT_MEMORY_READ_SECONDS,
+    PermissionLevel.MEMORY_WRITE: TOOL_TIMEOUT_MEMORY_WRITE_SECONDS,
+    PermissionLevel.WRITE: TOOL_TIMEOUT_WRITE_SECONDS,
+    PermissionLevel.DESTRUCTIVE: TOOL_TIMEOUT_DESTRUCTIVE_SECONDS,
 }
 
 

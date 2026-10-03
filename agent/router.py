@@ -77,6 +77,7 @@ def route_request(user_input: str):
         r"\bwhat's\s+.*\bcity\b",
         r"\bwhat is\s+.*\bdetails\b",
         r"\bwhat's\s+.*\bdetails\b",
+        r"\bwhat is\s+(?:the\s+)?(?:current|latest|recent)\s+information\s+about\s+",
     ]
 
     for pattern in customer_lookup_patterns:

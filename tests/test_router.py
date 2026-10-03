@@ -40,6 +40,13 @@ class TestRouteRequest(unittest.TestCase):
             route_request("What's Mary's email?"),
             "find_customer",
         )
+    def test_customer_lookup_with_current_keyword(self):
+
+        self.assertEqual(
+            route_request("What is the current information about John Kamau?"),
+            "find_customer",
+        )
+
 
     # ---------------------------------------------
     # CUSTOMER LIST

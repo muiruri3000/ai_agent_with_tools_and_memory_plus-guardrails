@@ -2,7 +2,9 @@ import json
 import os
 from pathlib import Path
 
-MEMORY_FILE = Path(os.getenv("ATLAS_MEMORY_FILE", "memory/data.json"))
+from config.settings import ATLAS_MEMORY_FILE
+
+MEMORY_FILE = Path(ATLAS_MEMORY_FILE)
 
 
 def _load_memory() -> list:

@@ -3,6 +3,8 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
+from config.settings import LOG_LEVEL, LOG_PATH
+
 
 class JsonFormatter(logging.Formatter):
     """
@@ -33,9 +35,7 @@ class JsonFormatter(logging.Formatter):
         )
 
 
-def configure_logging(
-    log_path="logs/atlas.jsonl",
-):
+def configure_logging(log_path=LOG_PATH):
     """
     Configure structured application logging for Atlas.
     """
@@ -52,7 +52,7 @@ def configure_logging(
     if logger.handlers:
         return logger
 
-    logger.setLevel(logging.INFO)
+    logger.setLevel(getattr(logging, LOG_LEVEL.upper(), logging.INFO))
 
     handler = logging.FileHandler(
         path,
