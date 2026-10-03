@@ -68,6 +68,19 @@ class AgentTask:
 
         self.observations.append(result)
 
+    def is_complete(self) -> bool:
+        """Return True when the task completed successfully."""
+
+        return self.status == TaskStatus.COMPLETED
+
+    def is_terminal(self) -> bool:
+        """Return True when the task can no longer continue running."""
+
+        return self.status in {
+            TaskStatus.COMPLETED,
+            TaskStatus.FAILED,
+        }
+
     def complete(self, result: str) -> None:
         """Mark the task as successfully completed."""
 

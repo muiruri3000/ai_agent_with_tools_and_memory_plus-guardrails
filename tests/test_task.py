@@ -69,6 +69,38 @@ class TestAgentTask(unittest.TestCase):
 
         self.assertEqual(task.observations, [result])
 
+    def test_pending_task_is_not_complete_or_terminal(self):
+        task = AgentTask(goal="Find David")
+
+        self.assertFalse(task.is_complete())
+        self.assertFalse(task.is_terminal())
+
+    def test_running_task_is_not_complete_or_terminal(self):
+        task = AgentTask(goal="Find David")
+
+        task.start()
+
+        self.assertFalse(task.is_complete())
+        self.assertFalse(task.is_terminal())
+
+    def test_completed_task_is_complete_and_terminal(self):
+        task = AgentTask(goal="Find David")
+
+        task.start()
+        task.complete("David was found.")
+
+        self.assertTrue(task.is_complete())
+        self.assertTrue(task.is_terminal())
+
+    def test_failed_task_is_not_complete_but_is_terminal(self):
+        task = AgentTask(goal="Find David")
+
+        task.start()
+        task.fail("Database unavailable.")
+
+        self.assertFalse(task.is_complete())
+        self.assertTrue(task.is_terminal())
+
     def test_complete_marks_task_completed(self):
         task = AgentTask(goal="Find David")
 
