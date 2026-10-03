@@ -726,10 +726,40 @@ class Atlas:
 
                     try:
                         if self.current_task is not None:
+                            arguments = dict(function_call.args)
+
                             self.current_task.record_tool_call(
                                 function_call.name,
-                                dict(function_call.args),
+                                arguments,
                             )
+
+                            if self.current_task.has_consecutive_tool_call(
+                                function_call.name,
+                                arguments,
+                            ):
+                                self.metrics.increment(
+                                    "stuck_loop_detected"
+                                )
+
+                                self.logger.warning(
+                                    "Stuck tool-call loop detected",
+                                    extra={
+                                        "event": "stuck_loop_detected",
+                                        "tool": function_call.name,
+                                        "arguments": arguments,
+                                        "repetitions": 3,
+                                    },
+                                )
+
+                                self.current_task.fail(
+                                    "Stuck tool-call loop detected."
+                                )
+
+                                return (
+                                    "I stopped the tool execution because "
+                                    "the same tool call was repeated "
+                                    "three times without making progress."
+                                )
 
                         result = self.executor.execute(
                             function_call.name,

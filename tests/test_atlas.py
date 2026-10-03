@@ -1760,6 +1760,218 @@ class TestAtlasTaskState(unittest.TestCase):
         )
 
     @patch("agent.atlas.genai.Client")
+    def test_stuck_tool_loop_fails_task_and_stops_execution(
+        self,
+        mock_client,
+    ):
+        atlas = Atlas()
+
+        tool_call_1 = type(
+            "FunctionCall",
+            (),
+            {
+                "name": "web_search",
+                "args": {
+                    "query": "AWS STS",
+                },
+            },
+        )()
+
+        tool_call_2 = type(
+            "FunctionCall",
+            (),
+            {
+                "name": "web_search",
+                "args": {
+                    "query": "AWS STS",
+                },
+            },
+        )()
+
+        tool_call_3 = type(
+            "FunctionCall",
+            (),
+            {
+                "name": "web_search",
+                "args": {
+                    "query": "AWS STS",
+                },
+            },
+        )()
+
+        responses = [
+            type(
+                "Response",
+                (),
+                {
+                    "function_calls": [tool_call_1],
+                    "text": None,
+                },
+            )(),
+            type(
+                "Response",
+                (),
+                {
+                    "function_calls": [tool_call_2],
+                    "text": None,
+                },
+            )(),
+            type(
+                "Response",
+                (),
+                {
+                    "function_calls": [tool_call_3],
+                    "text": None,
+                },
+            )(),
+        ]
+
+        atlas.chat.send_message.side_effect = responses
+
+        atlas.executor.execute = unittest.mock.Mock(
+            return_value=ToolResult(
+                success=True,
+                action="web_search",
+                message="Search completed.",
+                data=[],
+            )
+        )
+
+        atlas.executor.serialize_result = unittest.mock.Mock(
+            side_effect=lambda result: {
+                "success": result.success,
+                "action": result.action,
+                "message": result.message,
+                "data": result.data,
+            }
+        )
+
+        atlas.current_task = AgentTask(
+            goal="Search AWS STS"
+        )
+        atlas.current_task.start()
+
+        response = atlas.handle_gemini("Search AWS STS")
+
+        self.assertIn(
+            "same tool call was repeated three times",
+            response,
+        )
+        self.assertEqual(
+            atlas.current_task.status.value,
+            "failed",
+        )
+        self.assertEqual(
+            atlas.current_task.error,
+            "Stuck tool-call loop detected.",
+        )
+        self.assertEqual(
+            atlas.current_task.iteration,
+            3,
+        )
+        self.assertEqual(
+            len(atlas.current_task.tool_calls),
+            3,
+        )
+        self.assertEqual(
+            atlas.executor.execute.call_count,
+            2,
+        )
+
+    @patch("agent.atlas.genai.Client")
+    def test_non_repeating_tool_calls_continue_normally(
+        self,
+        mock_client,
+    ):
+        atlas = Atlas()
+
+        tool_call_1 = type(
+            "FunctionCall",
+            (),
+            {
+                "name": "web_search",
+                "args": {
+                    "query": "AWS STS",
+                },
+            },
+        )()
+
+        tool_call_2 = type(
+            "FunctionCall",
+            (),
+            {
+                "name": "web_search",
+                "args": {
+                    "query": "AWS IAM",
+                },
+            },
+        )()
+
+        final_response = type(
+            "Response",
+            (),
+            {
+                "function_calls": [],
+                "text": "Done.",
+            },
+        )()
+
+        atlas.chat.send_message.side_effect = [
+            type(
+                "Response",
+                (),
+                {
+                    "function_calls": [tool_call_1],
+                    "text": None,
+                },
+            )(),
+            type(
+                "Response",
+                (),
+                {
+                    "function_calls": [tool_call_2],
+                    "text": None,
+                },
+            )(),
+            final_response,
+        ]
+
+        atlas.executor.execute = unittest.mock.Mock(
+            return_value=ToolResult(
+                success=True,
+                action="web_search",
+                message="Search completed.",
+                data=[],
+            )
+        )
+
+        atlas.executor.serialize_result = unittest.mock.Mock(
+            side_effect=lambda result: {
+                "success": result.success,
+                "action": result.action,
+                "message": result.message,
+                "data": result.data,
+            }
+        )
+
+        atlas.current_task = AgentTask(
+            goal="Search AWS"
+        )
+        atlas.current_task.start()
+
+        response = atlas.handle_gemini("Search AWS")
+
+        self.assertEqual(response, "Done.")
+        self.assertEqual(
+            atlas.current_task.status.value,
+            "completed",
+        )
+        self.assertEqual(
+            atlas.executor.execute.call_count,
+            2,
+        )
+
+    @patch("agent.atlas.genai.Client")
     def test_failed_gemini_request_marks_task_failed(
         self,
         mock_client,
