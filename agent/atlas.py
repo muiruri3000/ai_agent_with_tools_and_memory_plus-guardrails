@@ -683,9 +683,7 @@ class Atlas:
         """
 
         try:
-            response = self.chat.send_message(
-                self.build_agent_message(message)
-            )
+            response = self.chat.send_message(self.build_agent_message(message))
 
             tool_iterations = 0
 
@@ -727,6 +725,12 @@ class Atlas:
                 for function_call in response.function_calls:
 
                     try:
+                        if self.current_task is not None:
+                            self.current_task.record_tool_call(
+                                function_call.name,
+                                dict(function_call.args),
+                            )
+
                         result = self.executor.execute(
                             function_call.name,
                             dict(function_call.args),
@@ -751,7 +755,8 @@ class Atlas:
                                 "error": str(exc),
                             },
                         )
-
+                    if self.current_task is not None:
+                        self.current_task.record_observation(result)
                     serialized_result = self.executor.serialize_result(result)
 
                     function_responses.append(
@@ -791,6 +796,7 @@ class Atlas:
             )
 
             raise
+
     def build_agent_message(self, message: str) -> str:
         """
         Build the message sent to Gemini.

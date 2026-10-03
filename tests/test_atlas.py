@@ -1523,6 +1523,243 @@ class TestAtlasTaskState(unittest.TestCase):
         )
 
     @patch("agent.atlas.genai.Client")
+    def test_gemini_tool_call_is_recorded(
+        self,
+        mock_client,
+    ):
+        atlas = Atlas()
+
+        tool_call = type(
+            "FunctionCall",
+            (),
+            {
+                "name": "web_search",
+                "args": {
+                    "query": "AWS STS",
+                },
+            },
+        )()
+
+        first_response = type(
+            "Response",
+            (),
+            {
+                "function_calls": [tool_call],
+                "text": None,
+            },
+        )()
+
+        final_response = type(
+            "Response",
+            (),
+            {
+                "function_calls": [],
+                "text": "Done.",
+            },
+        )()
+
+        atlas.chat.send_message.side_effect = [
+            first_response,
+            final_response,
+        ]
+
+        atlas.executor.execute = unittest.mock.Mock(
+            return_value=ToolResult(
+                success=True,
+                action="web_search",
+                message="Search completed.",
+                data=[],
+            )
+        )
+
+        atlas.executor.serialize_result = unittest.mock.Mock(
+            side_effect=lambda result: {
+                "success": result.success,
+                "action": result.action,
+                "message": result.message,
+                "data": result.data,
+            }
+        )
+
+        atlas.current_task = AgentTask(
+            goal="Search AWS STS"
+        )
+        atlas.current_task.start()
+
+        atlas.handle_gemini("Search AWS STS")
+
+        self.assertEqual(
+            len(atlas.current_task.tool_calls),
+            1,
+        )
+        self.assertEqual(
+            atlas.current_task.tool_calls[0]["function"],
+            "web_search",
+        )
+        self.assertEqual(
+            atlas.current_task.tool_calls[0]["arguments"],
+            {"query": "AWS STS"},
+        )
+
+    @patch("agent.atlas.genai.Client")
+    def test_gemini_tool_observation_is_recorded(
+        self,
+        mock_client,
+    ):
+        atlas = Atlas()
+
+        tool_call = type(
+            "FunctionCall",
+            (),
+            {
+                "name": "web_search",
+                "args": {
+                    "query": "AWS STS",
+                },
+            },
+        )()
+
+        first_response = type(
+            "Response",
+            (),
+            {
+                "function_calls": [tool_call],
+                "text": None,
+            },
+        )()
+
+        final_response = type(
+            "Response",
+            (),
+            {
+                "function_calls": [],
+                "text": "Done.",
+            },
+        )()
+
+        atlas.chat.send_message.side_effect = [
+            first_response,
+            final_response,
+        ]
+
+        tool_result = ToolResult(
+            success=True,
+            action="web_search",
+            message="Search completed.",
+            data=[],
+        )
+
+        atlas.executor.execute = unittest.mock.Mock(
+            return_value=tool_result
+        )
+
+        atlas.executor.serialize_result = unittest.mock.Mock(
+            side_effect=lambda result: {
+                "success": result.success,
+                "action": result.action,
+                "message": result.message,
+                "data": result.data,
+            }
+        )
+
+        atlas.current_task = AgentTask(
+            goal="Search AWS STS"
+        )
+        atlas.current_task.start()
+
+        atlas.handle_gemini("Search AWS STS")
+
+        self.assertEqual(
+            len(atlas.current_task.observations),
+            1,
+        )
+        self.assertIs(
+            atlas.current_task.observations[0],
+            tool_result,
+        )
+
+    @patch("agent.atlas.genai.Client")
+    def test_failed_tool_observation_is_recorded(
+        self,
+        mock_client,
+    ):
+        atlas = Atlas()
+
+        tool_call = type(
+            "FunctionCall",
+            (),
+            {
+                "name": "web_search",
+                "args": {
+                    "query": "AWS STS",
+                },
+            },
+        )()
+
+        first_response = type(
+            "Response",
+            (),
+            {
+                "function_calls": [tool_call],
+                "text": None,
+            },
+        )()
+
+        final_response = type(
+            "Response",
+            (),
+            {
+                "function_calls": [],
+                "text": "The search failed.",
+            },
+        )()
+
+        atlas.chat.send_message.side_effect = [
+            first_response,
+            final_response,
+        ]
+
+        atlas.executor.execute = unittest.mock.Mock(
+            side_effect=RuntimeError("Search unavailable.")
+        )
+
+        atlas.executor.serialize_result = unittest.mock.Mock(
+            side_effect=lambda result: {
+                "success": result.success,
+                "action": result.action,
+                "message": result.message,
+                "data": result.data,
+            }
+        )
+
+        atlas.current_task = AgentTask(
+            goal="Search AWS STS"
+        )
+        atlas.current_task.start()
+
+        atlas.handle_gemini("Search AWS STS")
+
+        self.assertEqual(
+            len(atlas.current_task.tool_calls),
+            1,
+        )
+        self.assertEqual(
+            len(atlas.current_task.observations),
+            1,
+        )
+        self.assertFalse(
+            atlas.current_task.observations[0].success
+        )
+        self.assertEqual(
+            atlas.current_task.observations[0].action,
+            "web_search",
+        )
+        self.assertIn(
+            "Search unavailable.",
+            atlas.current_task.observations[0].message,
+        )
+
+    @patch("agent.atlas.genai.Client")
     def test_failed_gemini_request_marks_task_failed(
         self,
         mock_client,
